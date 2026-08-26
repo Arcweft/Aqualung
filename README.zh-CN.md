@@ -8,7 +8,7 @@ aqualung 由两个小程序组成。`snorkel` 在家里和代理一起运行，�
 
 ## 状态
 
-`snorkel` 已经存在。`topside` 还没有实现。接口仍不稳定。
+`snorkel` 和 `topside` 都已经存在。接口仍不稳定。
 
 ## 在家里的机器上运行 snorkel
 
@@ -27,6 +27,21 @@ target/debug/snorkel \
 服务器端口默认是 1943。这五个值也可以分别通过 `SNORKEL_SOCKET`、
 `SNORKEL_SERVER`、`SNORKEL_CERT`、`SNORKEL_KEY` 和 `SNORKEL_CA` 提供。
 加上 `--once` 后，第一次连接尝试或会话结束时进程会退出，不再重连。
+
+## 在服务器上运行 topside
+
+先运行 `cargo build -p topside`，再传入服务端证书、钉死的 snorkel 客户端证书，以及给手机用的 bearer token：
+
+```sh
+target/debug/topside \
+  --cert /path/to/server.pem \
+  --key /path/to/server-key.pem \
+  --ca /path/to/ca.pem \
+  --client-cert /path/to/snorkel-client.pem \
+  --token SECRET
+```
+
+`--snorkel` 默认是 `0.0.0.0:1943`。`--phone` 默认是 `0.0.0.0:7678`。这些值也可以分别通过 `TOPSIDE_CERT`、`TOPSIDE_KEY`、`TOPSIDE_CA`、`TOPSIDE_CLIENT_CERT`、`TOPSIDE_TOKEN`、`TOPSIDE_SNORKEL` 和 `TOPSIDE_PHONE` 提供。坏配置退出 2。SIGINT 或 SIGTERM 退出 0。
 
 ## 工作原理
 
