@@ -22,6 +22,7 @@ STALE = [
     "`control-aqualung doctor` 在只有 `snorkel` 时退出 1",
     "本页没有展开那个常量的毫秒数",
     "status line 键",
+    "`authMethods` 为空数组表示 Agent 没有可走的 ACP 认证方法。",
 ]
 
 REQUIRED_H2 = [

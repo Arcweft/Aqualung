@@ -204,6 +204,7 @@ Grok 工作区依赖 `agent-client-protocol = "0.10.4"`，feature `unstable`。�
 - `Upgrade: websocket`
 - `Sec-WebSocket-Version: 13`
 - `Authorization: Bearer <token>`
+- 没有 `Sec-WebSocket-Protocol`
 - 期望 `101`
 - 发送一个 WebSocket 文本帧，内含一个 JSON-RPC 对象
 - 读取一个文本帧
@@ -216,7 +217,7 @@ ACP v1 里 Client 发给 Agent 的基线方法是 `initialize`、`authenticate`�
 
 Agent 发给 Client 的基线方法是 `session/request_permission`。可选方法是 `fs/read_text_file`、`fs/write_text_file`、`terminal/create`、`terminal/output`、`terminal/wait_for_exit`、`terminal/kill`、`terminal/release`、`elicitation/create`。通知是 `session/update` 与 `elicitation/complete`。
 
-`initialize` 必须在任何 session 方法之前。请求带整数 `protocolVersion` 与 `clientCapabilities`。响应带选定的 `protocolVersion`、`agentCapabilities`、`authMethods`。省略的能力视为不支持。`authMethods` 为空数组表示 Agent 没有可走的 ACP 认证方法。传输层 bearer 不是 ACP `authenticate`。`session/new` 在需要认证时可以回 `auth_required`。schema 里该错误码是 `-32000`。通知 `$/cancel_request` 对应 `-32800` Request cancelled。普通 JSON-RPC 码是 `-32700`、`-32600`、`-32601`、`-32602`、`-32603`。资源未找到是 `-32002`。
+`initialize` 必须在任何 session 方法之前。请求带整数 `protocolVersion` 与 `clientCapabilities`。响应带选定的 `protocolVersion`、`agentCapabilities`、`authMethods`。省略的能力视为不支持。`authMethods` 的 schema 缺省是 `[]`。初始化示例用空数组，然后进入 session。v1 没有另写空数组的含义。Client 因此没有可传给 `authenticate` 的 `methodId`。传输层 bearer 不是 ACP `authenticate`。`session/new` 在需要认证时仍可以回 `auth_required`。schema 里该错误码是 `-32000`。v1 没有 `initialized` 通知。那是 RFD 的词。`phone.py` 只做一次 `initialize` 往返。通知 `$/cancel_request` 对应 `-32800` Request cancelled。普通 JSON-RPC 码是 `-32700`、`-32600`、`-32601`、`-32602`、`-32603`。资源未找到是 `-32002`。
 
 `session/request_permission` 是权限弹窗的 ACP 方法名。取消进行中的 prompt 时，Client 必须对未完成的权限请求回 `cancelled`。
 
@@ -241,4 +242,5 @@ ACP v2 仍是 draft。
 - 两部手机同时 `session/prompt` 时 topside 或 Agent 的排队、拒绝、忙闸
 - Register 里 `yolo_mode`、`auto_mode`、`status_line`、`code_nav_enabled`、`default_model` 取什么值
 - 手机 `initialize` 在家里离线时返回的 `agentCapabilities` 具体字段
+- `session/load` 与 `fs/write_text_file` 的 `result` 是 `null` 还是对象。文档示例与 schema 不一致
 - topside 用 SDK 2.0、Grok 钉死的 0.10.4，还是手写 JSON-RPC
