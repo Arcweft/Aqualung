@@ -1,5 +1,7 @@
 # aqualung
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Use the coding agent on your home machine from your phone.
 
 aqualung is two small programs. `snorkel` runs next to the agent at home and dials
