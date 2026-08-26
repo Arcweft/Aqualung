@@ -19,7 +19,9 @@ The machine at home runs the agent, which listens on a local unix socket for the
 editors and terminals attached to it. `snorkel` connects to that socket and dials
 the server over TLS. It copies bytes in both directions and does nothing else: it
 does not parse the stream and it does not speak ACP. Dialing, the client
-certificate, and reconnection are its whole job.
+certificate, and reconnection are its whole job. When the agent is Grok Build,
+that socket is `leader.sock` and the bytes on it are leader frames, not JSON-RPC.
+See [docs/snorkel-on-grok-leader.md](docs/snorkel-on-grok-leader.md).
 
 `topside` terminates that stream on the server. To the agent it is a single remote
 client. To phones it is an ACP server, and it multiplexes several of them onto the

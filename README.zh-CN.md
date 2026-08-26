@@ -12,7 +12,7 @@ aqualung 由两个小程序组成。`snorkel` 在家里和代理一起运行，�
 
 ## 工作原理
 
-家里那台机器跑代理。代理在本地 unix socket 上监听，编辑器和终端连上去。`snorkel` 连上这个 socket，再通过 TLS 拨到服务器。它只做双向拷贝字节，别的什么都不做：不解析数据流，也不讲 ACP。拨号、客户端证书、断线重连，就是它的全部工作。
+家里那台机器跑代理。代理在本地 unix socket 上监听，编辑器和终端连上去。`snorkel` 连上这个 socket，再通过 TLS 拨到服务器。它只做双向拷贝字节，别的什么都不做：不解析数据流，也不讲 ACP。拨号、客户端证书、断线重连，就是它的全部工作。家里的代理如果是 Grok Build，这个 socket 就是 `leader.sock`，上面的字节是 leader 帧，不是 JSON-RPC。见 [docs/snorkel-on-grok-leader.md](docs/snorkel-on-grok-leader.md)。
 
 `topside` 在服务器上终结这条流。对代理来说，它是一个远程客户端。对手机来说，它是 ACP 服务器，并把多部手机复用到这一条连接上：它会改写 JSON-RPC 的请求 id，把会话更新扇出给所有正在看这个会话的手机，自己应答 `initialize` 和认证。它同一时间只服务一个 `snorkel`；新认证的连接会顶掉旧的，这样家里卡住的进程就不会把你锁在外面。
 
