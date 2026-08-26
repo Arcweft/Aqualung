@@ -6,7 +6,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 - Export `AQUALUNG_VERIFY_RUN` and put `.cursor/skills/verify-aqualung/bin` on `PATH`.
 - Run `control-aqualung doctor --save`. Drive only when it exits 0.
-- If doctor exits 2, the checkout is design-stage. Save `doctor.json` and stop. The features below are unreachable.
+- If doctor exits 2 (`design`) or 1 (`incomplete`), save `doctor.json` and stop. The features below are unreachable.
 - Never drive a listener on 1943 or 7678 that this run did not start.
 - topside serves one snorkel. Do not start a second verification run against the same ports.
 
