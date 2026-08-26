@@ -1,6 +1,6 @@
 # Snorkel 与 Grok leader
 
-家里跑 Grok Build。手机经 aqualung 用 ACP 操作同一份 Agent。`snorkel` 已经存在。你接下来要实现 `topside`。事实底稿见 [Topside 设计输入](topside-inputs.md)。
+家里跑 Grok Build。手机经 aqualung 用 ACP 操作同一份 Agent。`snorkel` 和 `topside` 都存在。事实底稿见 [Topside 设计输入](topside-inputs.md)。
 
 snorkel 接的是 `~/.grok/leader.sock` 上一条已经 accept 的 Unix 连接。那条流是 leader 私有帧，不是 ACP 行协议，也不是 `grok agent serve`。
 
@@ -109,7 +109,7 @@ topside 记下 `Registered` 里的 `leader_protocol_version` 和 `leader_binary_
 
 ## 尚未证实的事
 
-- `snorkel` 源码已存在。`topside` 还不存在。本机没有编译出的二进制时，`control-aqualung doctor` 退出 2，`"stage": "design"`。这是本机跑过的。只有一侧二进制时退出 1，`"stage": "incomplete"`。那条来自 `control-aqualung` 源码，本机没有用真实二进制跑过。映射功能要等 topside 存在且 doctor 退出 0 才能用运行时证明。
+- Launch 把 snorkel 指到不存在的 unix socket，所以它不拨 TLS。phone-attach 可以在 doctor `"stage": "ready"` 下用 `control-aqualung phone` 证明。host-away、snorkel-replace、session-fan-out 在 `cargo test -p topside` 里证明。home-bypass 在缺少真实 `leader.sock` 时仍无法用运行时证明。
 - `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。验证图没有写忙闸。Grok leader 源码没有在 IPC 层挡住第二份 prompt。不要先假设 leader 会挡。
 - Windows named pipe 不在范围内。家里的机器是 macOS。
 

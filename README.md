@@ -11,7 +11,7 @@ agent, its tools, and its conversations stay on the machine at home.
 
 ## Status
 
-`snorkel` exists. `topside` does not. The interface is not stable.
+`snorkel` and `topside` both exist. The interface is not stable.
 
 ## Run snorkel at home
 
@@ -31,6 +31,25 @@ The server port defaults to 1943. The five values can also come from
 `SNORKEL_SOCKET`, `SNORKEL_SERVER`, `SNORKEL_CERT`, `SNORKEL_KEY`, and
 `SNORKEL_CA`. Add `--once` to stop after the first connection attempt or session
 instead of reconnecting.
+
+## Run topside on the server
+
+Build the binary with `cargo build -p topside`, then give it server PEMs, the
+pinned snorkel client certificate, and a bearer token for phones:
+
+```sh
+target/debug/topside \
+  --cert /path/to/server.pem \
+  --key /path/to/server-key.pem \
+  --ca /path/to/ca.pem \
+  --client-cert /path/to/snorkel-client.pem \
+  --token SECRET
+```
+
+`--snorkel` defaults to `0.0.0.0:1943`. `--phone` defaults to `0.0.0.0:7678`.
+The same values load from `TOPSIDE_CERT`, `TOPSIDE_KEY`, `TOPSIDE_CA`,
+`TOPSIDE_CLIENT_CERT`, `TOPSIDE_TOKEN`, `TOPSIDE_SNORKEL`, and `TOPSIDE_PHONE`.
+Bad configuration exits 2. SIGINT or SIGTERM exits 0.
 
 ## How it works
 
