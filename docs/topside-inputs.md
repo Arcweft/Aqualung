@@ -42,7 +42,7 @@
 | [Session fan-out](../.cursor/skills/verify-aqualung/features/session-fanout.md) | 两部手机看同一场时，一场的更新送到两部。请求 id 碰撞时一部看不到另一部的结果。没在看的手机收不到那场更新。 |
 | [Home bypass](../.cursor/skills/verify-aqualung/features/home-bypass.md) | 家里编辑器走 unix socket。杀掉 topside 后家里 socket 仍应答。手机能力里没有 topside 替家里代报的 fs、terminal、tools。 |
 
-本机没有 `target/debug/snorkel` 时，`control-aqualung doctor` 退出 2，`"stage": "design"`。这是本机跑过的。`emit_doctor` 只找到一侧二进制时把 stage 设为 `incomplete` 并退出 1。本机 rustc 1.83 编不了 edition 2024 的 snorkel，所以 `incomplete` 没有用真实二进制跑过。Launch 在缺少 `topside --help` 时拒绝启动。
+本机没有 `target/debug/snorkel` 时，`control-aqualung doctor` 退出 2，`"stage": "design"`。这是本机跑过的。`emit_doctor` 只找到一侧二进制时把 stage 设为 `"incomplete"` 并退出 1。本机 rustc 1.83 编不了 edition 2024 的 snorkel，所以 `"stage": "incomplete"` 没有用真实二进制跑过。Launch 在缺少 `topside --help` 时拒绝启动。
 
 ## snorkel 拨号合同
 
