@@ -12,3 +12,4 @@ ts	phase	decision	why	evidence	result
 2026-08-26T14:34:44Z	docs	complete inject_session_request_context table and evict underscore prefix	the first draft omitted overwrite rules and extra capability keys	docs/topside-inputs.md initialize section; protocol.rs wire_name	VERIFIED
 2026-08-26T14:34:44Z	lever	check script now requires README links, both doctor stages, and 120 seconds	the oversimplified doctor-exit-1 claim came back once already	python3 scripts/check-topside-inputs.py	ok: 11 headings, 4 json fences, 4 files, no stale phrases
 2026-08-26T14:34:44Z	skip	deslop skill is not in this environment	opening-a-pr asks for it; the plugin file is absent	glob cursor-team-kit deslop: none	skipped
+2026-08-26T14:38:36Z	no-comments	accept Comment Sicko deletion of the check-script module docstring	the docstring narrated how to run the file; the PR already names the command	scripts/check-topside-inputs.py git diff: 6 deletions	accepted, 1 deletion

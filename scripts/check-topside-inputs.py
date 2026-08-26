@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Check topside design-input docs stay current.
-
-Run from the repo root:
-
-    python3 scripts/check-topside-inputs.py
-"""
 
 from __future__ import annotations
 
