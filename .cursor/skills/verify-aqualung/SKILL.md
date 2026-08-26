@@ -7,7 +7,7 @@ description: "Verify aqualung. Drive snorkel (home mTLS dialer on 1943) and tops
 
 aqualung is two programs. `snorkel` runs next to the agent at home and dials out. `topside` runs on a server you control and speaks ACP to phones. This skill drives those processes the way a user does.
 
-`snorkel` exists. `topside` does not. `control-aqualung doctor` exits 1 with `"stage": "incomplete"` while only one binary is present. That JSON is the proof this checkout matches the README. It is not a skip of the mapped features. Those features stay unreachable until `topside` exists and doctor can exit 0.
+Both binaries exist. `control-aqualung doctor` after Launch exits 0 with `"stage": "ready"` when this run owns 1943 and 7678. Drive only then.
 
 Read `features/README.md` before driving. Drive every listed entry point for the feature under test. An unreachable path is reported with the doctor transcript, never as a pass through a different path.
 
@@ -30,14 +30,38 @@ export PATH="$PWD/.cursor/skills/verify-aqualung/bin:$PATH"
 
 Run `control-aqualung launch`. Completion: stdout is a doctor JSON object.
 
+Launch mints a throwaway PKI and bearer token under `run/$AQUALUNG_VERIFY_RUN/`, starts both processes, and writes their PIDs to `run/$AQUALUNG_VERIFY_RUN/state`. The token is also written to `run/$AQUALUNG_VERIFY_RUN/token`.
+
+```
+target/debug/topside \
+  --cert run/$AQUALUNG_VERIFY_RUN/pki/server.pem \
+  --key run/$AQUALUNG_VERIFY_RUN/pki/server.key \
+  --ca run/$AQUALUNG_VERIFY_RUN/pki/ca.pem \
+  --client-cert run/$AQUALUNG_VERIFY_RUN/pki/client.pem \
+  --token "$(cat run/$AQUALUNG_VERIFY_RUN/token)" \
+  --snorkel 0.0.0.0:1943 \
+  --phone 0.0.0.0:7678
+```
+
+```
+target/debug/snorkel \
+  --socket run/$AQUALUNG_VERIFY_RUN/missing.sock \
+  --server 127.0.0.1:1943 \
+  --cert run/$AQUALUNG_VERIFY_RUN/pki/client.pem \
+  --key run/$AQUALUNG_VERIFY_RUN/pki/client.key \
+  --ca run/$AQUALUNG_VERIFY_RUN/pki/ca.pem
+```
+
+The unix socket path does not exist. snorkel will not dial TLS. topside still owns 1943 and 7678, so doctor can be `ready` and phones can attach. This Launch does not hold a phone socket, so host-away, replace, and fan-out stay proven by `cargo test -p topside`, not by sequential `initialize`.
+
 - Exit 2 and `"stage": "design"`: neither binary exists. Stop.
-- Exit 1 and `"stage": "incomplete"`: only `snorkel` or only `topside` is present. Stop. Do not invent the missing binary. `snorkel --help` names `--socket`, `--server`, `--cert`, `--key`, `--ca`, and `--once`. There is still no `topside` start command.
+- Exit 1 and `"stage": "incomplete"`: only `snorkel` or only `topside` is present. Stop. Do not invent the missing binary.
 - Exit 1 and `"stage": "foreign"`: something this run did not start already owns 1943 or 7678. Stop. Do not kill it.
-- Exit 1 and `"stage": "idle"`: both binaries exist but this run has not launched. Launch still refuses until `topside --help` exists and this section names how both processes start.
+- Exit 1 and `"stage": "idle"`: both binaries exist but this run has not launched.
 
-Ready means both binaries exist, this run owns the listeners, and doctor exits 0. Documented defaults from the README: snorkel dials `1943/tcp` with mutual TLS (one client certificate). Phones connect on `7678/tcp` with a bearer token, ACP over WebSocket, one JSON-RPC object per message.
+Ready means both binaries exist, this run owns the listeners, and doctor exits 0. snorkel dials `1943/tcp` with mutual TLS (one client certificate). Phones connect on `7678/tcp` with a bearer token, ACP over WebSocket, one JSON-RPC object per message.
 
-topside serves one snorkel. A new authenticated snorkel replaces the old one. Two verification runs on the same ports will steal each other. One run per machine unless you have rewritten Launch with distinct ports from real flags.
+topside serves one snorkel. A new authenticated snorkel replaces the old one. Two verification runs on the same ports will steal each other. One run per machine unless you rewrite Launch with distinct ports from real flags.
 
 Teardown is `control-aqualung cleanup` with the same `AQUALUNG_VERIFY_RUN`.
 
@@ -72,7 +96,7 @@ control-aqualung phone --token "$TOKEN" --send '{"jsonrpc":"2.0","id":0,"method"
 
 That opens `ws://127.0.0.1:7678/`, sends `Authorization: Bearer $TOKEN`, writes one text frame, prints one text frame. topside answers `initialize` and authentication itself. Assert a JSON-RPC body (result or error) from that process, not a TCP drop and not a reply that could only have come from the home agent.
 
-Snorkel path is mTLS to `1943/tcp`. There is no probe subcommand until Launch documents how snorkel is started and where it takes the unix socket and client cert. Do not invent those flags.
+Snorkel path is mTLS to `1943/tcp`. Launch starts snorkel with `--socket` pointing at a missing unix path, so it does not dial TLS. Do not invent a live home agent.
 
 Stable handles: port `1943`, port `7678`, header `Authorization: Bearer`, JSON-RPC `method` `"initialize"`, one JSON object per WebSocket message. The README says the interface is not stable; assert behavior the README already states, not field names from a future binary.
 
@@ -95,7 +119,7 @@ Proof standards:
 - Side effects: topside writes nothing to disk. After restart, phones re-attach by loading the session again. Prove that by reconnecting, not by looking for files under topside.
 - Mocks only at a production boundary that already isolates an external system. A fake topside is not aqualung. Do not stand one up to make a feature look green.
 
-On this checkout, the only valid mapped-feature proof is `doctor --save` with exit 1 and `"stage": "incomplete"` while `topside` is absent. Do not call that phone attach, host-away, or snorkel-replace. `cargo test -p snorkel` proves the dialer against unix and mTLS fixtures. That is not aqualung.
+On a checkout with both binaries, Launch starts them, doctor `--save` exits 0 with `"stage": "ready"`, and `control-aqualung phone` with the Launch token proves phone-attach. Host-away, snorkel-replace, and session-fan-out are crate tests (`cargo test -p topside`) until Launch grows a listen mode that holds a phone socket. Sequential `initialize` is not those features. Home-bypass stays unreachable while Launch points snorkel at a missing unix socket.
 
 ## Cleanup
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Verification control for aqualung. Invoke from anywhere; it finds the repo root.
 set -u
 
 SKILL_DIR=$(cd "$(dirname "$0")/.." && pwd)
@@ -159,21 +158,103 @@ cmd_doctor() {
   doctor_exit "$json"
 }
 
+generate_pki() {
+  local dir=$1
+  mkdir_p "$dir"
+  openssl genrsa -out "$dir/ca.key" 2048 2>/dev/null
+  openssl req -new -x509 -key "$dir/ca.key" -out "$dir/ca.pem" -days 2 -subj "/CN=aqualung-verify-ca" 2>/dev/null
+  openssl genrsa -out "$dir/server.key" 2048 2>/dev/null
+  openssl req -new -key "$dir/server.key" -out "$dir/server.csr" -subj "/CN=127.0.0.1" 2>/dev/null
+  printf '%s\n' "subjectAltName=IP:127.0.0.1" "extendedKeyUsage=serverAuth" >"$dir/server.ext"
+  openssl x509 -req -in "$dir/server.csr" -CA "$dir/ca.pem" -CAkey "$dir/ca.key" -CAcreateserial -out "$dir/server.pem" -days 2 -extfile "$dir/server.ext" 2>/dev/null
+  openssl genrsa -out "$dir/client.key" 2048 2>/dev/null
+  openssl req -new -key "$dir/client.key" -out "$dir/client.csr" -subj "/CN=snorkel-client" 2>/dev/null
+  printf '%s\n' "extendedKeyUsage=clientAuth" >"$dir/client.ext"
+  openssl x509 -req -in "$dir/client.csr" -CA "$dir/ca.pem" -CAkey "$dir/ca.key" -CAcreateserial -out "$dir/client.pem" -days 2 -extfile "$dir/client.ext" 2>/dev/null
+}
+
+wait_listen() {
+  local port=$1
+  local i
+  for i in $(seq 1 50); do
+    if [[ -n "$(listener_pid "$port")" ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 cmd_launch() {
   local json stage
   json=$(emit_doctor)
   stage=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["stage"])' <<<"$json")
-  printf '%s\n' "$json"
   if [[ "$stage" == "design" ]]; then
-    echo "launch refused: this checkout has no snorkel/topside binary. Do not invent a start command."
+    printf '%s\n' "$json"
+    echo "launch refused: this checkout has no snorkel/topside binary. Do not invent a start command." >&2
     return 2
   fi
-  if [[ "$stage" == "foreign" ]]; then
-    echo "launch refused: a process we did not start owns 1943 or 7678."
+  if [[ "$stage" == "incomplete" ]]; then
+    printf '%s\n' "$json"
+    echo "launch refused: only one of snorkel/topside is present." >&2
     return 1
   fi
-  echo "launch refused: binaries exist but this skill has no documented start flags yet. Read snorkel --help and topside --help, then update Launch via /maintain-verification-skill."
-  return 1
+  if [[ "$stage" == "foreign" ]]; then
+    printf '%s\n' "$json"
+    echo "launch refused: a process we did not start owns 1943 or 7678." >&2
+    return 1
+  fi
+  if [[ "$stage" == "ready" ]]; then
+    printf '%s\n' "$json"
+    return 0
+  fi
+
+  local snorkel_bin topside_bin token topside_pid snorkel_pid
+  snorkel_bin=$(find_binary snorkel) || return 1
+  topside_bin=$(find_binary topside) || return 1
+  mkdir_p "$RUN_DIR"
+  mkdir_p "$ARTIFACT_DIR"
+  generate_pki "$RUN_DIR/pki"
+  token=$(openssl rand -hex 16)
+  printf '%s\n' "$token" >"$RUN_DIR/token"
+  echo "TOPSIDE_TOKEN=$token" >&2
+
+  "$topside_bin" \
+    --cert "$RUN_DIR/pki/server.pem" \
+    --key "$RUN_DIR/pki/server.key" \
+    --ca "$RUN_DIR/pki/ca.pem" \
+    --client-cert "$RUN_DIR/pki/client.pem" \
+    --token "$token" \
+    --snorkel 0.0.0.0:1943 \
+    --phone 0.0.0.0:7678 \
+    >"$ARTIFACT_DIR/topside.log" 2>&1 &
+  topside_pid=$!
+
+  "$snorkel_bin" \
+    --socket "$RUN_DIR/missing.sock" \
+    --server 127.0.0.1:1943 \
+    --cert "$RUN_DIR/pki/client.pem" \
+    --key "$RUN_DIR/pki/client.key" \
+    --ca "$RUN_DIR/pki/ca.pem" \
+    >"$ARTIFACT_DIR/snorkel.log" 2>&1 &
+  snorkel_pid=$!
+
+  printf '%s\n%s\n' "$topside_pid" "$snorkel_pid" >"$STATE_FILE"
+
+  if ! wait_listen "$SNORKEL_PORT" || ! wait_listen "$TOPSIDE_PHONE_PORT"; then
+    echo "launch failed: topside did not listen on 1943 and 7678" >&2
+    if [[ -f "$ARTIFACT_DIR/topside.log" ]]; then
+      cat "$ARTIFACT_DIR/topside.log" >&2
+    fi
+    kill "$topside_pid" 2>/dev/null || true
+    kill "$snorkel_pid" 2>/dev/null || true
+    rm -f "$STATE_FILE"
+    return 1
+  fi
+
+  json=$(emit_doctor)
+  printf '%s\n' "$json"
+  doctor_exit "$json"
 }
 
 cmd_cleanup() {
