@@ -42,7 +42,7 @@
 | [Session fan-out](../.cursor/skills/verify-aqualung/features/session-fanout.md) | 两部手机看同一场时，一场的更新送到两部。请求 id 碰撞时一部看不到另一部的结果。没在看的手机收不到那场更新。 |
 | [Home bypass](../.cursor/skills/verify-aqualung/features/home-bypass.md) | 家里编辑器走 unix socket。杀掉 topside 后家里 socket 仍应答。手机能力里没有 topside 替家里代报的 fs、terminal、tools。 |
 
-未编译出 `snorkel` 或 `topside` 二进制时，`control-aqualung doctor` 退出 2，`"stage": "design"`。只找到一侧二进制时退出 1，`"stage": "incomplete"`。Launch 在缺少 `topside --help` 时拒绝启动。
+本机没有 `target/debug/snorkel` 时，`control-aqualung doctor` 退出 2，`"stage": "design"`。这是本机跑过的。`emit_doctor` 只找到一侧二进制时把 stage 设为 `incomplete` 并退出 1。本机 rustc 1.83 编不了 edition 2024 的 snorkel，所以 `incomplete` 没有用真实二进制跑过。Launch 在缺少 `topside --help` 时拒绝启动。
 
 ## snorkel 拨号合同
 
@@ -213,9 +213,9 @@ Grok 工作区依赖 `agent-client-protocol = "0.10.4"`，feature `unstable`。�
 
 一条 ACP 连接上可以同时有多场会话。所有文件路径必须是绝对路径。行号从 1 起。
 
-ACP v1 里 Client 发给 Agent 的基线方法是 `initialize`、`authenticate`、`session/new`、`session/prompt`。可选方法是 `session/load`、`session/resume`、`session/close`、`session/delete`、`session/list`、`session/set_mode`、`session/set_config_option`、`logout`。通知是 `session/cancel`。可选通知 `$/cancel_request` 带 `requestId`。
+ACP v1 协议页里 Client 发给 Agent 的基线方法是 `initialize`、`authenticate`、`session/new`、`session/prompt`。可选方法是 `session/load`、`session/resume`、`session/close`、`session/delete`、`session/list`、`session/set_mode`、`session/set_config_option`、`logout`。通知是 `session/cancel`。可选通知 `$/cancel_request` 带 `requestId`。
 
-Agent 发给 Client 的基线方法是 `session/request_permission`。可选方法是 `fs/read_text_file`、`fs/write_text_file`、`terminal/create`、`terminal/output`、`terminal/wait_for_exit`、`terminal/kill`、`terminal/release`、`elicitation/create`。通知是 `session/update` 与 `elicitation/complete`。
+Agent 发给 Client 的基线方法是 `session/request_permission`。可选方法是 `fs/read_text_file`、`fs/write_text_file`、`terminal/create`、`terminal/output`、`terminal/wait_for_exit`、`terminal/kill`、`terminal/release`、`elicitation/create`。通知是 `session/update` 与 `elicitation/complete`。这些方法名和下面的错误码来自 ACP v1 协议页，不是来自 SDK 钉死的 schema 1.5.0。
 
 `initialize` 必须在任何 session 方法之前。请求带整数 `protocolVersion` 与 `clientCapabilities`。响应带选定的 `protocolVersion`、`agentCapabilities`、`authMethods`。省略的能力视为不支持。`authMethods` 的 schema 缺省是 `[]`。初始化示例用空数组，然后进入 session。v1 没有另写空数组的含义。Client 因此没有可传给 `authenticate` 的 `methodId`。传输层 bearer 不是 ACP `authenticate`。`session/new` 在需要认证时仍可以回 `auth_required`。schema 里该错误码是 `-32000`。v1 没有 `initialized` 通知。那是 RFD 的词。`phone.py` 只做一次 `initialize` 往返。通知 `$/cancel_request` 对应 `-32800` Request cancelled。普通 JSON-RPC 码是 `-32700`、`-32600`、`-32601`、`-32602`、`-32603`。资源未找到是 `-32002`。
 

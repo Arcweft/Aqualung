@@ -109,7 +109,7 @@ topside 记下 `Registered` 里的 `leader_protocol_version` 和 `leader_binary_
 
 ## 尚未证实的事
 
-- `snorkel` 源码已存在。`topside` 还不存在。没有编译出的二进制时，`control-aqualung doctor` 退出 2，`"stage": "design"`。只有一侧二进制时退出 1，`"stage": "incomplete"`。映射功能要等 topside 存在且 doctor 退出 0 才能用运行时证明。
+- `snorkel` 源码已存在。`topside` 还不存在。本机没有编译出的二进制时，`control-aqualung doctor` 退出 2，`"stage": "design"`。这是本机跑过的。只有一侧二进制时退出 1，`"stage": "incomplete"`。那条来自 `control-aqualung` 源码，本机没有用真实二进制跑过。映射功能要等 topside 存在且 doctor 退出 0 才能用运行时证明。
 - `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。验证图没有写忙闸。Grok leader 源码没有在 IPC 层挡住第二份 prompt。不要先假设 leader 会挡。
 - Windows named pipe 不在范围内。家里的机器是 macOS。
 

@@ -42,9 +42,11 @@ REQUIRED_H2 = [
 REQUIRED_SNIPPETS = [
     '"stage": "design"',
     '"stage": "incomplete"',
+    "没有用真实二进制跑过",
     "clientStatusLine",
     "LEADER_READY_TIMEOUT",
     "120 秒",
+    "不是来自 SDK 钉死的 schema 1.5.0",
 ]
 
 

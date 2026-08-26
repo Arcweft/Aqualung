@@ -14,3 +14,7 @@ ts	phase	decision	why	evidence	result
 2026-08-26T14:34:44Z	skip	deslop skill is not in this environment	opening-a-pr asks for it; the plugin file is absent	glob cursor-team-kit deslop: none	skipped
 2026-08-26T14:38:36Z	no-comments	accept Comment Sicko deletion of the check-script module docstring	the docstring narrated how to run the file; the PR already names the command	scripts/check-topside-inputs.py git diff: 6 deletions	accepted, 1 deletion
 2026-08-26T14:42:55Z	docs	drop the empty-authMethods meaning claim and record no WS subprotocol	ACP v1 never defines empty authMethods; phone.py sends no Sec-WebSocket-Protocol	docs/topside-inputs.md 7678 section; worker-1 report empty authMethods	VERIFIED
+2026-08-26T14:45:07Z	trail	trail review flags incomplete doctor as unread on this host	cargo build -p snorkel failed on rustc 1.83 so exit 1 was never observed	docs/topside-inputs.md doctor paragraph; rustc 1.83.0	accepted, docs now split observed vs source
+2026-08-26T14:45:07Z	trail	row 9 provenance was same-run compaction not a prior agent	append-only correction; the files were written in this run before the compact	.audit/topside-inputs.tsv 2026-08-26T14:34:44Z pickup	superseded
+2026-08-26T14:45:07Z	trail	method lists and error codes are ACP v1 pages not schema crate 1.5.0	SDK 2.0.0 pins =1.5.0; site schema is 1.7.0	crates.io api agent-client-protocol 2.0.0 dependencies req =1.5.0	VERIFIED pin first-hand
+2026-08-26T14:45:07Z	no-comments	Comment Sicko docstring deletion was read and committed	accepted 1 deletion; no MUST KILL left	commit 53de46a	triaged
