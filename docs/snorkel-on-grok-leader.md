@@ -18,7 +18,7 @@ topside 才是 leader 的 follower。它对手机讲 ACP，对这条出站连接
 
 对手机用户。外出时连你的 VPS，用 ACP 看家里 Mini 上的同一场会话。家里窗口可以同时开着。Mini 不听入站端口。
 
-对接下来写 aqualung 的人。home 侧的“代理 socket”在 Grok 上就是 `leader.sock`。README 里“拷贝字节、不讲 ACP”仍然成立。不成立的是“那条流本身是 JSON-RPC”。JSON-RPC 包在 leader 帧的 `Acp.payload` 里。id 改写、会话扇出、权限先答，leader 只在 **follower** 之间做。手机之间的同样工作必须在 topside 做，因为 leader 只看见一个 ClientId。
+对接下来写 aqualung 的人。home 侧的“代理 socket”在 Grok 上就是 `leader.sock`。README 里“拷贝字节、不讲 ACP”仍然成立。不成立的是“那条流本身是 JSON-RPC”。JSON-RPC 是 `Acp.payload` 里的字符串，不是嵌套对象。会话扇出和权限先答，leader 只在 **follower** 之间做。手机之间的同样工作必须在 topside 做，因为 leader 只看见一个 ClientId。
 
 ## Leader 协议
 
@@ -26,15 +26,15 @@ topside 才是 leader 的 follower。它对手机讲 ACP，对这条出站连接
 
 **传输。** Unix 上是 `UnixStream`（`leader/transport.rs`）。每条消息是 4 字节大端长度，后跟 JSON，上限 64MB（`protocol.rs` 的 `read_frame` / `write_frame`）。`LEADER_PROTOCOL_VERSION` 现在是 `1`。
 
-**握手。** 客户端先发 `ClientMessage::Register`，带 `client_type`、`mode`、`capabilities`。服务端回 `Registered { client_id, ready, ... }`。`ready == false` 时，客户端必须等到 `LeaderReady` 再发 ACP（`client.rs` 的 `register`）。远程这条连接用 `ClientMode::Stdio`。`Headless` 会向 grok.com relay 要流量，不要用。
+**握手。** 客户端必须在 30 秒内先发 `ClientMessage::Register`，带 `client_type`、`mode`、`capabilities`。否则 leader 回 `Registration timeout` 并断开。服务端回 `Registered { client_id, ready, ... }`。`ready == false` 时，客户端必须等到 `LeaderReady` 再发 ACP（`client.rs` 的 `register`）。远程这条连接用 `ClientMode::Stdio`。`Headless` 会向 grok.com relay 要流量，不要用。socket 上没有 token，也没有 peer cred。能 `connect()` 的本地进程就是 client。
 
-**ACP 怎么走。** 客户端 `{"type":"acp","payload":"<json-rpc 字符串>"}`。服务端同形。leader 在进 Agent 之前把请求 id 写成 `{clientId}|{原 id 的 JSON}`（`server.rs` 的 `rewrite_request_id`，分隔符 `|`）。回包再拆开还给对应 follower。
+**ACP 怎么走。** 客户端 `{"type":"acp","payload":"<json-rpc 字符串>"}`。服务端同形。`payload` 必须是字符串。写成嵌套对象会直接反序列化失败。leader 在内部通道上把请求 id 写成 `{clientId}|{原 id 的 JSON}`（`server.rs` 的 `rewrite_request_id`，分隔符 `|`），写回这条 Unix 连接之前会还原。隧道上看到的是 follower 自己的 id，看不到 `123|42`。
 
 **会话。** `session_subscribers` 按 `sessionId` 记哪些 `ClientId` 在看。`session/update` 只发给订阅了那场的人，不是全量广播。`session/load` 和 `session/resume` 是再挂一块屏幕，不是挤掉上一个，也不是隐式 fork。`session/load` 的历史回放只给正在 load 的那个 follower（`x.ai/leaderClientId`）。权限弹窗、`ask_user_question`、`exit_plan_mode`、`mcp/elicit` 会广播给该场所有订阅者，谁先答谁算（`is_interaction_request`）。
 
 **掉线。** 某个 follower 断开后，leader 从订阅表里删掉它。若那场没有剩下的订阅者，leader 向 Agent 发 `x.ai/internal/evict_sessions`。最后一个客户端离开时，若没有 `--no-exit-on-disconnect`，leader 进程自己退出。
 
-**控制面。** 还有 `Ping`/`Pong`、`Control`（leader 信息、CPU profile、workspace、为升级而 relaunch）。snorkel 原样拷这些字节。topside 至少要能握手、转发 ACP、对 `Ping` 回 `Pong`。其余控制命令可以先不发。
+**控制面。** 还有 `Ping`/`Pong`、`Control`（leader 信息、CPU profile、workspace、为升级而 relaunch）。snorkel 原样拷这些字节。官方 client 每 30 秒发 `Ping`。leader 立刻回 `Pong`，不会因为缺 ping 把连接踢掉。topside 必须按 `type` 把这些帧从 ACP 里分出来，不能把整帧当 JSON-RPC。其余控制命令可以先不发。
 
 ## Snorkel 怎么接
 
@@ -54,8 +54,8 @@ snorkel 在家里 `connect()` 那颗 socket，把得到的那条流和 VPS 上�
 这些不能下放到 snorkel，也不能指望 leader 替手机做。
 
 1. **讲 leader 方言。** 连上后 `Register`（`mode: stdio`）。`Registered.ready == false` 就等到 `LeaderReady`。之后把手机的 JSON-RPC 放进 `Acp.payload`，把对端的 `Acp.payload` 拆回 JSON-RPC。
-2. **自己应答 `initialize` 和认证。** 这是 aqualung 已写明的。作为 follower，topside 仍要向 Agent 发一次自己的 `initialize`。手机各自的 `initialize` 不要原样灌进 leader。
-3. **改写手机请求 id。** leader 只按这一个 `ClientId` 加前缀。两部手机都用 `id: 1` 会在同一条 follower 上撞车。扇出前必须先在 topside 命名空间里拆开。
+2. **自己应答 `initialize` 和认证。** 这是 aqualung 已写明的。作为 follower，topside 仍要向 Agent 发一次自己的 `initialize`。Agent 只吃第一次 `initialize`，后来的会被丢掉。手机各自的 `initialize` 不要原样灌进 leader。
+3. **改写手机请求 id。** 两部手机都用 `id: 1` 时，leader 只看见同一个 follower，内部前缀也撞。隧道上不会出现 `|` 前缀。扇出前必须先在 topside 命名空间里拆开。
 4. **按 `sessionId` 扇出给手机。** leader 只会把更新发给这个唯一的 snorkel follower。看 s1 的手机 A 和看 s2 的手机 B，分发在 topside。
 5. **手机之间的权限先答。** leader 的先答只发生在 TUI 和 snorkel 之间。多部手机抢同一弹窗，topside 收齐、先答者胜、只回一条给 leader。
 6. **能力不要替家里代报。** `ClientCapabilities` 里的 `terminal` / `fs_read` / `fs_write` 为 true 时，leader 会让 Agent 把终端和文件打到这个客户端。手机路径上这些应为 false。工具仍在 Mini 上跑。
@@ -88,16 +88,16 @@ snorkel 卡住再拉起来时，新连接鉴权成功就会顶掉旧的。若旧
 
 ## 版本耦合
 
-topside 跟的是 grok 的 leader 方言，不是 ACP 规范本身。`Register` 形状、帧头、`ready`/`LeaderReady`、id 前缀、内部通知名字，升 grok 都可能变。`protocol.rs` 写明新字段必须 `#[serde(default)]`，新旧二进制可以混跑，但这不是承诺线格式稳定。
+topside 跟的是 grok 的 leader 方言，不是 ACP 规范本身。`Register` 形状、帧头、`ready`/`LeaderReady`、内部通知名字，升 grok 都可能变。`protocol.rs` 写明新字段必须 `#[serde(default)]`，新旧二进制可以混跑，但这不是承诺线格式稳定。
 
 topside 记下 `Registered` 里的 `leader_protocol_version` 和 `leader_binary_version`。对不上就拒绝这条 snorkel，让手机看到明确错误，不要在拆帧失败时保持沉默。
 
 ## 还不知道的事
 
 - 本仓库还没有 `snorkel` / `topside` 二进制。`control-aqualung doctor` 现在退出 2。下面这些要等有进程才能用运行时证明。
-- topside 是否要周期发 `Ping`，leader 多久把静默连接踢掉。代码里有 `Ping`/`Pong`，超时策略没有在这一次调研里钉死。
-- `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。aqualung 验证图写的是 topside 立刻回忙。需要对照 Agent 的 prompt 队列再定，不要先假设 leader 会挡。
+- `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。aqualung 验证图写的是 topside 立刻回忙。三路源码都没有追进 prompt 队列。不要先假设 leader 会挡。
 - Windows named pipe 不在范围内。Mini 是 macOS。
+- 已安装的 `grok 1.0.10` 与这份 `SOURCE_REV` 是否同一提交，没有对过。
 
 ## 代码锚点
 
