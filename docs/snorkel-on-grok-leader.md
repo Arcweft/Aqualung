@@ -1,6 +1,6 @@
 # Snorkel 与 Grok leader
 
-家里跑 Grok Build。手机经 aqualung 用 ACP 操作同一份 Agent。你接下来要实现 `snorkel` 和 `topside`。
+家里跑 Grok Build。手机经 aqualung 用 ACP 操作同一份 Agent。`snorkel` 已经存在。你接下来要实现 `topside`。事实底稿见 [Topside 设计输入](topside-inputs.md)。
 
 snorkel 接的是 `~/.grok/leader.sock` 上一条已经 accept 的 Unix 连接。那条流是 leader 私有帧，不是 ACP 行协议，也不是 `grok agent serve`。
 
@@ -109,19 +109,21 @@ topside 记下 `Registered` 里的 `leader_protocol_version` 和 `leader_binary_
 
 ## 尚未证实的事
 
-- 本仓库还没有 `snorkel` 或 `topside` 二进制。`control-aqualung doctor` 现在退出 2。下面这些要等有进程才能用运行时证明。
-- `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。aqualung 验证图写的是 topside 立刻回忙。Grok 源码里没有追进 prompt 队列。不要先假设 leader 会挡。
+- `snorkel` 源码已存在。`topside` 还不存在。没有编译出的二进制时，`control-aqualung doctor` 退出 2，`"stage": "design"`。只有一侧二进制时退出 1，`"stage": "incomplete"`。映射功能要等 topside 存在且 doctor 退出 0 才能用运行时证明。
+- `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。验证图没有写忙闸。Grok leader 源码没有在 IPC 层挡住第二份 prompt。不要先假设 leader 会挡。
 - Windows named pipe 不在范围内。家里的机器是 macOS。
 
 ## 相关材料
 
-Grok Build 源码里对过的位置：
+Grok Build 源码在 `https://github.com/xai-org/grok-build`。本页对过的提交是 `77cd7eb675ba911c225c3aaeeece3a20cbccc426`。路径：
 
 | 主题 | 位置 |
 | --- | --- |
 | 帧、Register、消息枚举 | `crates/codegen/xai-grok-shell/src/leader/protocol.rs` |
 | Unix 传输 | `crates/codegen/xai-grok-shell/src/leader/transport.rs` |
 | 握手与 LeaderReady | `crates/codegen/xai-grok-shell/src/leader/client.rs` |
+| `LEADER_READY_TIMEOUT` = 120 秒 | `crates/codegen/xai-grok-http/src/lib.rs` |
+| `clientStatusLine` | `crates/codegen/xai-grok-status-line/src/lib.rs` |
 | 路由、id 前缀、订阅、先答、掉线驱逐 | `crates/codegen/xai-grok-shell/src/leader/server.rs` |
 | 锁与 `GROK_LEADER_SOCKET` | `crates/codegen/xai-grok-shell/src/leader/lock.rs` |
 | 总览 | `crates/codegen/xai-grok-shell/src/leader/mod.rs` |
@@ -132,6 +134,7 @@ Grok Build 源码里对过的位置：
 aqualung 侧已写明、且本设计遵守的约束：
 
 - [README.md](../README.md)
+- [Topside 设计输入](topside-inputs.md)
 - [Phone attach](../.cursor/skills/verify-aqualung/features/phone-attach.md)
 - [Host away](../.cursor/skills/verify-aqualung/features/host-away.md)
 - [Snorkel replace](../.cursor/skills/verify-aqualung/features/snorkel-replace.md)

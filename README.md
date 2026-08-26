@@ -40,7 +40,9 @@ the server over TLS. It copies bytes in both directions and does nothing else: i
 does not parse the stream and it does not speak ACP. Dialing, the client
 certificate, and reconnection are its whole job. When the agent is Grok Build,
 that socket is `leader.sock` and the bytes on it are leader frames, not JSON-RPC.
-See [docs/snorkel-on-grok-leader.md](docs/snorkel-on-grok-leader.md).
+See [docs/snorkel-on-grok-leader.md](docs/snorkel-on-grok-leader.md). Facts a
+`topside` design must use are in
+[docs/topside-inputs.md](docs/topside-inputs.md).
 
 `topside` terminates that stream on the server. To the agent it is a single remote
 client. To phones it is an ACP server, and it multiplexes several of them onto the
