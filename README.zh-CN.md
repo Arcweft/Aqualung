@@ -8,7 +8,25 @@ aqualung 由两个小程序组成。`snorkel` 在家里和代理一起运行，�
 
 ## 状态
 
-还在设计阶段。仓库里还没有代码，这里的接口也都不是稳定接口。
+`snorkel` 已经存在。`topside` 还没有实现。接口仍不稳定。
+
+## 在家里的机器上运行 snorkel
+
+先运行 `cargo build -p snorkel`，再把 agent 的 unix socket 和 topside 的
+mTLS 监听地址传给它：
+
+```sh
+target/debug/snorkel \
+  --socket /path/to/agent.sock \
+  --server topside.example.com \
+  --cert /path/to/client.pem \
+  --key /path/to/client-key.pem \
+  --ca /path/to/ca.pem
+```
+
+服务器端口默认是 1943。这五个值也可以分别通过 `SNORKEL_SOCKET`、
+`SNORKEL_SERVER`、`SNORKEL_CERT`、`SNORKEL_KEY` 和 `SNORKEL_CA` 提供。
+加上 `--once` 后，第一次连接尝试或会话结束时进程会退出，不再重连。
 
 ## 工作原理
 
