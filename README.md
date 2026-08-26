@@ -11,7 +11,26 @@ agent, its tools, and its conversations stay on the machine at home.
 
 ## Status
 
-Design stage. There is no code yet, and nothing here is a stable interface.
+`snorkel` exists. `topside` does not. The interface is not stable.
+
+## Run snorkel at home
+
+Build the binary with `cargo build -p snorkel`, then point it at the agent's unix
+socket and topside's mTLS listener:
+
+```sh
+target/debug/snorkel \
+  --socket /path/to/agent.sock \
+  --server topside.example.com \
+  --cert /path/to/client.pem \
+  --key /path/to/client-key.pem \
+  --ca /path/to/ca.pem
+```
+
+The server port defaults to 1943. The five values can also come from
+`SNORKEL_SOCKET`, `SNORKEL_SERVER`, `SNORKEL_CERT`, `SNORKEL_KEY`, and
+`SNORKEL_CA`. Add `--once` to stop after the first connection attempt or session
+instead of reconnecting.
 
 ## How it works
 

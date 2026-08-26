@@ -7,7 +7,7 @@ description: "Verify aqualung. Drive snorkel (home mTLS dialer on 1943) and tops
 
 aqualung is two programs. `snorkel` runs next to the agent at home and dials out. `topside` runs on a server you control and speaks ACP to phones. This skill drives those processes the way a user does.
 
-This checkout is design-stage. `README.md` Status says there is no code yet. `control-aqualung doctor` must exit 2 until `snorkel` and `topside` binaries exist. That exit is the proof the tree matches the README. It is not a skip of the mapped features.
+`snorkel` exists. `topside` does not. `control-aqualung doctor` exits 1 with `"stage": "incomplete"` while only one binary is present. That JSON is the proof this checkout matches the README. It is not a skip of the mapped features. Those features stay unreachable until `topside` exists and doctor can exit 0.
 
 Read `features/README.md` before driving. Drive every listed entry point for the feature under test. An unreachable path is reported with the doctor transcript, never as a pass through a different path.
 
@@ -30,11 +30,12 @@ export PATH="$PWD/.cursor/skills/verify-aqualung/bin:$PATH"
 
 Run `control-aqualung launch`. Completion: stdout is a doctor JSON object.
 
-- Exit 2 and `"stage": "design"`: no binary to start. Stop. Do not invent `cargo run`, `npm start`, or listen ports yourself.
+- Exit 2 and `"stage": "design"`: neither binary exists. Stop.
+- Exit 1 and `"stage": "incomplete"`: only `snorkel` or only `topside` is present. Stop. Do not invent the missing binary. `snorkel --help` names `--socket`, `--server`, `--cert`, `--key`, `--ca`, and `--once`. There is still no `topside` start command.
 - Exit 1 and `"stage": "foreign"`: something this run did not start already owns 1943 or 7678. Stop. Do not kill it.
-- Exit 1 after binaries appear: the README still has no start command. Read `snorkel --help` and `topside --help`, then rewrite this section with `/maintain-verification-skill` before launching.
+- Exit 1 and `"stage": "idle"`: both binaries exist but this run has not launched. Launch still refuses until `topside --help` exists and this section names how both processes start.
 
-Ready means both binaries exist, this run owns the listeners, and doctor exits 0. Documented defaults from the README, not from guesswork: snorkel dials `1943/tcp` with mutual TLS (one client certificate). Phones connect on `7678/tcp` with a bearer token, ACP over WebSocket, one JSON-RPC object per message.
+Ready means both binaries exist, this run owns the listeners, and doctor exits 0. Documented defaults from the README: snorkel dials `1943/tcp` with mutual TLS (one client certificate). Phones connect on `7678/tcp` with a bearer token, ACP over WebSocket, one JSON-RPC object per message.
 
 topside serves one snorkel. A new authenticated snorkel replaces the old one. Two verification runs on the same ports will steal each other. One run per machine unless you have rewritten Launch with distinct ports from real flags.
 
@@ -94,7 +95,7 @@ Proof standards:
 - Side effects: topside writes nothing to disk. After restart, phones re-attach by loading the session again. Prove that by reconnecting, not by looking for files under topside.
 - Mocks only at a production boundary that already isolates an external system. A fake topside is not aqualung. Do not stand one up to make a feature look green.
 
-On design-stage, the only valid proof is `doctor --save` with exit 2 and `"stage": "design"`. Do not call that a verification of phone attach.
+On this checkout, the only valid mapped-feature proof is `doctor --save` with exit 1 and `"stage": "incomplete"` while `topside` is absent. Do not call that phone attach, host-away, or snorkel-replace. `cargo test -p snorkel` proves the dialer against unix and mTLS fixtures. That is not aqualung.
 
 ## Cleanup
 
