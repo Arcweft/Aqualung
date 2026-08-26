@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+# Verification control for aqualung. Invoke from anywhere; it finds the repo root.
+set -u
+
+SKILL_DIR=$(cd "$(dirname "$0")/.." && pwd)
+ROOT=$(cd "$SKILL_DIR/../../.." && pwd)
+RUN_ID=${AQUALUNG_VERIFY_RUN:-}
+if [[ -z "$RUN_ID" ]]; then
+  RUN_ID=$(date +%Y%m%dT%H%M%S)
+fi
+ARTIFACT_DIR="$SKILL_DIR/artifacts/$RUN_ID"
+RUN_DIR="$SKILL_DIR/run/$RUN_ID"
+STATE_FILE="$RUN_DIR/state"
+PHONE_PY="$SKILL_DIR/bin/phone.py"
+
+SNORKEL_PORT=1943
+TOPSIDE_PHONE_PORT=7678
+
+usage() {
+  cat <<EOF
+control-aqualung <command>
+
+  doctor [--save]   Read-only health check. Exit 0 driveable, 2 design-stage, 1 otherwise.
+  launch            Start a disposable instance. Refuses if binaries are missing or ports are foreign.
+  cleanup           Kill only PIDs recorded for this RUN_ID. Leaves artifacts in place.
+  phone --token T --send JSON [--host H] [--port P]
+                    One WebSocket JSON-RPC round trip to topside. Only after doctor exits 0.
+
+Environment:
+  AQUALUNG_VERIFY_RUN   Run id (default: timestamp). Artifacts and PID state are keyed by this.
+EOF
+}
+
+mkdir_p() {
+  mkdir -p "$1"
+}
+
+find_binary() {
+  local name=$1
+  if command -v "$name" >/dev/null 2>&1; then
+    command -v "$name"
+    return 0
+  fi
+  local cand
+  for cand in "$ROOT/target/release/$name" "$ROOT/target/debug/$name"; do
+    if [[ -x "$cand" ]]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+listener_pid() {
+  local port=$1
+  local line
+  line=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $2}')
+  if [[ -n "${line:-}" ]]; then
+    printf '%s\n' "$line"
+  fi
+}
+
+readme_status() {
+  awk '
+    /^## Status$/ {grab=1; next}
+    grab && /^## / {exit}
+    grab && NF {print; exit}
+  ' "$ROOT/README.md"
+}
+
+git_head() {
+  git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+emit_doctor() {
+  local snorkel topside pid1943 pid7678 stage driveable reason owned
+  snorkel=$(find_binary snorkel || true)
+  topside=$(find_binary topside || true)
+  pid1943=$(listener_pid "$SNORKEL_PORT" || true)
+  pid7678=$(listener_pid "$TOPSIDE_PHONE_PORT" || true)
+  owned=false
+  if [[ -f "$STATE_FILE" ]]; then
+    owned=true
+  fi
+
+  if [[ -z "$snorkel" && -z "$topside" ]]; then
+    stage=design
+    driveable=false
+    reason="no snorkel or topside binary on PATH or in target/{release,debug}"
+  elif [[ -z "$snorkel" || -z "$topside" ]]; then
+    stage=incomplete
+    driveable=false
+    reason="only one of snorkel/topside is present"
+  elif [[ -n "$pid1943" || -n "$pid7678" ]] && [[ "$owned" != true ]]; then
+    stage=foreign
+    driveable=false
+    reason="port 1943 or 7678 is already listening and was not started by this run"
+  elif [[ "$owned" != true ]]; then
+    stage=idle
+    driveable=false
+    reason="binaries exist but this run has not launched an instance"
+  else
+    stage=ready
+    driveable=true
+    reason="owned instance"
+  fi
+
+  python3 - "$ROOT" "$(git_head)" "$(readme_status)" "${snorkel:-}" "${topside:-}" "${pid1943:-}" "${pid7678:-}" "$stage" "$driveable" "$reason" "$owned" "$RUN_ID" <<'PY'
+import json, sys
+root, head, status, snorkel, topside, pid1943, pid7678, stage, driveable, reason, owned, run_id = sys.argv[1:]
+doc = {
+    "app": "aqualung",
+    "run_id": run_id,
+    "repo": root,
+    "git_head": head,
+    "readme_status": status,
+    "stage": stage,
+    "driveable": driveable == "true",
+    "owned_instance": owned == "true",
+    "reason": reason,
+    "binaries": {
+        "snorkel": snorkel or None,
+        "topside": topside or None,
+    },
+    "listeners": {
+        "1943": int(pid1943) if pid1943 else None,
+        "7678": int(pid7678) if pid7678 else None,
+    },
+}
+print(json.dumps(doc, indent=2))
+PY
+}
+
+doctor_exit() {
+  local stage
+  stage=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["stage"])' <<<"$1")
+  case "$stage" in
+    ready) return 0 ;;
+    design) return 2 ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_doctor() {
+  local save=0 json
+  if [[ "${1:-}" == "--save" ]]; then
+    save=1
+  elif [[ -n "${1:-}" ]]; then
+    echo "unknown doctor flag: $1" >&2
+    return 1
+  fi
+  json=$(emit_doctor)
+  printf '%s\n' "$json"
+  if [[ "$save" -eq 1 ]]; then
+    mkdir_p "$ARTIFACT_DIR"
+    printf '%s\n' "$json" >"$ARTIFACT_DIR/doctor.json"
+    printf 'wrote %s\n' "$ARTIFACT_DIR/doctor.json" >&2
+  fi
+  doctor_exit "$json"
+}
+
+cmd_launch() {
+  local json stage
+  json=$(emit_doctor)
+  stage=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["stage"])' <<<"$json")
+  printf '%s\n' "$json"
+  if [[ "$stage" == "design" ]]; then
+    echo "launch refused: this checkout has no snorkel/topside binary. Do not invent a start command."
+    return 2
+  fi
+  if [[ "$stage" == "foreign" ]]; then
+    echo "launch refused: a process we did not start owns 1943 or 7678."
+    return 1
+  fi
+  echo "launch refused: binaries exist but this skill has no documented start flags yet. Read snorkel --help and topside --help, then update Launch via /maintain-verification-skill."
+  return 1
+}
+
+cmd_cleanup() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    echo "no owned instance for run $RUN_ID"
+    return 0
+  fi
+  local pid
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done <"$STATE_FILE"
+  rm -f "$STATE_FILE"
+  rmdir "$RUN_DIR" 2>/dev/null || true
+  echo "cleaned run $RUN_ID (artifacts kept)"
+}
+
+cmd_phone() {
+  local token="" send="" host="127.0.0.1" port="$TOPSIDE_PHONE_PORT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --token) token=$2; shift 2 ;;
+      --send) send=$2; shift 2 ;;
+      --host) host=$2; shift 2 ;;
+      --port) port=$2; shift 2 ;;
+      *) echo "unknown phone flag: $1" >&2; return 1 ;;
+    esac
+  done
+  if [[ -z "$token" || -z "$send" ]]; then
+    echo "phone requires --token and --send" >&2
+    return 1
+  fi
+  local json
+  json=$(emit_doctor)
+  if ! python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin)["driveable"] else 1)' <<<"$json"; then
+    echo "phone refused: doctor is not driveable. Run doctor --save and stop." >&2
+    return 1
+  fi
+  python3 "$PHONE_PY" --host "$host" --port "$port" --token "$token" --send "$send"
+}
+
+cmd=${1:-}
+shift || true
+case "$cmd" in
+  doctor) cmd_doctor "$@" ;;
+  launch) cmd_launch "$@" ;;
+  cleanup) cmd_cleanup "$@" ;;
+  phone) cmd_phone "$@" ;;
+  -h|--help|help|"") usage; exit 0 ;;
+  *) echo "unknown command: $cmd" >&2; usage; exit 1 ;;
+esac
+exit $?
