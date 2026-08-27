@@ -5,6 +5,9 @@
 #
 # Builds only when docker/Rust sources change on main, on v* tags, or
 # when someone runs the workflow by hand. Other CI / docs commits skip it.
+#
+# Each matrix image is pushed as :<name>-<sha> first. docker/smoke.sh
+# must pass before :stable / :alpha / :<grok> move.
 
 name: ghcr
 
@@ -67,8 +70,6 @@ jobs:
           build-args: |
             GROK_VERSION=${{ matrix.grok }}
           tags: |
-            ${{ env.IMAGE }}:${{ matrix.name }}
-            ${{ env.IMAGE }}:${{ matrix.grok }}
             ${{ env.IMAGE }}:${{ matrix.name }}-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -77,3 +78,15 @@ jobs:
             org.opencontainers.image.version=${{ matrix.grok }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: smoke
+        run: |
+          docker pull ${{ env.IMAGE }}:${{ matrix.name }}-${{ github.sha }}
+          docker/smoke.sh ${{ env.IMAGE }}:${{ matrix.name }}-${{ github.sha }} ${{ matrix.grok }}
+
+      - name: tag
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.IMAGE }}:${{ matrix.name }} \
+            -t ${{ env.IMAGE }}:${{ matrix.grok }} \
+            ${{ env.IMAGE }}:${{ matrix.name }}-${{ github.sha }}
