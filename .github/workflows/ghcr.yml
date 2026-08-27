@@ -3,17 +3,22 @@
 #   ghcr.io/arcweft/aqualung:stable
 #   ghcr.io/arcweft/aqualung:alpha
 #
-# Org packages start private. An org owner must once:
-#   https://github.com/orgs/Arcweft/packages/container/package/aqualung
-# 1. Package settings → Change visibility → Public
-# 2. Manage Actions access → Arcweft/aqualung → Write
+# Builds only when docker/Rust sources change on main, on v* tags, or
+# when someone runs the workflow by hand. Other CI / docs commits skip it.
+
 
 name: ghcr
 
 on:
   push:
-    branches: [main, "cursor/**"]
+    branches: [main]
     tags: ["v*"]
+    paths:
+      - "docker/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ghcr.yml"
   workflow_dispatch:
 
 permissions:
