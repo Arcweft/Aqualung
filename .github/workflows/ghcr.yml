@@ -64,3 +64,33 @@ jobs:
             org.opencontainers.image.version=${{ matrix.grok }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # GHCR packages are private until visibility is flipped. GITHUB_TOKEN
+  # created the package; try to make it pullable without a login.
+  public:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Make ghcr.io/arcweft/aqualung public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          owner="${{ github.repository_owner }}"
+          echo "::group::GET package"
+          gh api "orgs/${owner}/packages/container/aqualung"
+          echo "::endgroup::"
+          echo "::group::Set visibility public"
+          gh api --method POST \
+            "orgs/${owner}/packages/container/aqualung/visibility" \
+            -f visibility=public
+          status=$?
+          echo "::endgroup::"
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Could not set package visibility from GITHUB_TOKEN. An org owner must open https://github.com/orgs/${owner}/packages/container/aqualung/settings and change visibility to Public."
+          fi
+          exit 0
