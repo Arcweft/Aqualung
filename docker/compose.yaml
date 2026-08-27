@@ -7,9 +7,18 @@
 #
 # From repo root:
 #   docker compose -f docker/compose.yaml up --build
+#
+# Prebuilt images on GitHub Container Registry:
+#   ghcr.io/arcweft/aqualung:stable   (grok 1.0.5)
+#   ghcr.io/arcweft/aqualung:alpha    (grok 1.0.11)
+# Package page (set visibility Public once):
+#   https://github.com/orgs/Arcweft/packages/container/package/aqualung
+
+name: aqualung
 
 services:
   stable:
+    image: ghcr.io/arcweft/aqualung:stable
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -24,6 +33,7 @@ services:
       GROK_LEADER_SOCKET: /var/lib/grok/leader.sock
 
   alpha:
+    image: ghcr.io/arcweft/aqualung:alpha
     build:
       context: ..
       dockerfile: docker/Dockerfile

@@ -45,6 +45,11 @@ COPY --from=aqualung /out/snorkel /out/topside /usr/local/bin/
 COPY --from=grok /grok /usr/local/bin/grok
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+ARG GROK_VERSION
+LABEL org.opencontainers.image.source="https://github.com/Arcweft/aqualung" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.title="aqualung" \
+      org.opencontainers.image.version="${GROK_VERSION}"
 ENV GROK_HOME=/var/lib/grok
 ENV GROK_LEADER_SOCKET=/var/lib/grok/leader.sock
 ENV AQUALUNG_PKI=/run/aqualung/pki
