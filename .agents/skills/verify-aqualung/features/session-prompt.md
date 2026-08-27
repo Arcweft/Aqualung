@@ -29,5 +29,6 @@ Preconditions:
 
 - Phone `initialize` is answered by topside. It works with no home agent. Do not treat it as `session/prompt`.
 - `launch-home` starts its own `grok agent leader` on `run/$AQUALUNG_VERIFY_RUN/leader.sock`. That is not the interactive grok window unless you pass that window's socket with `--socket`. Cleanup kills only a leader this run started.
+- Sharing with the TUI is `grok agent leader --no-exit-on-disconnect` on `$HOME/.grok/leader.sock`, then `launch-home --socket` that path. `[cli] use_leader = true` makes `grok` join as a follower. `session/new` from this command uses cwd `/tmp`, so `grok sessions list` in another directory will not show it. Resume by `sessionId`. A second `grok agent --leader stdio` that `session/load`s that id and gets replay (`isReplay`, `x.ai/leaderClientId`) is proof the Agent is shared. The TUI being open at the same moment is not required for that proof.
 - `session/load` is a different feature. This command does not load.
 - Timeout defaults to 240 seconds. Host-away retries for 120 seconds; a model error does not retry.

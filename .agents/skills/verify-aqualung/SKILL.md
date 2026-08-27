@@ -62,6 +62,15 @@ control-aqualung launch-home
 
 Completion: stdout is a doctor JSON object with `"launch": "home"`. snorkel dials `run/$AQUALUNG_VERIFY_RUN/leader.sock`. `grok` must be on PATH. Cleanup kills that leader. Pass `--socket /path/to/leader.sock` to attach to a socket this run did not start; cleanup then leaves that grok running. Do not guess `~/.grok/leader.sock`.
 
+To share the Agent the interactive `grok` window uses, start a durable leader on the default socket first, then pass that path explicitly:
+
+```
+grok agent leader --no-exit-on-disconnect --relay-on-demand --no-auto-update
+control-aqualung launch-home --socket "$HOME/.grok/leader.sock"
+```
+
+`[cli] use_leader = true` in `~/.grok/config.toml` makes a later `grok` TUI connect as another follower. Cleanup still does not kill that leader. If snorkel is the last subscriber when it disconnects, leader may `EvictSessions` even though the process stays up.
+
 To prove Register and `session/load` against the published image instead, start GHCR. Docker random-maps 7678 and 1943 so a local Launch on those ports is a separate conflict, not this command:
 
 ```
