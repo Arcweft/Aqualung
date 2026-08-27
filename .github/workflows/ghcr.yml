@@ -1,0 +1,66 @@
+# Publish the stable (grok 1.0.5) and alpha (grok 1.0.11) images to GHCR.
+#
+#   ghcr.io/arcweft/aqualung:stable
+#   ghcr.io/arcweft/aqualung:alpha
+
+name: ghcr
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/arcweft/aqualung
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: stable
+            grok: "1.0.5"
+          - name: alpha
+            grok: "1.0.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          build-args: |
+            GROK_VERSION=${{ matrix.grok }}
+          tags: |
+            ${{ env.IMAGE }}:${{ matrix.name }}
+            ${{ env.IMAGE }}:${{ matrix.grok }}
+            ${{ env.IMAGE }}:${{ matrix.name }}-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.title=aqualung
+            org.opencontainers.image.version=${{ matrix.grok }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
