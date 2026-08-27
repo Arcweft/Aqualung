@@ -8,17 +8,21 @@ Included from pstack:
 - unslop, tdd, technical-writing
 - create-verification-skill, maintain-verification-skill
 - how, why, blast-radius, no-comments, teach, bro
+- architect, arena, swarm, interrogate, figure-it-out,
+  show-me-your-work, recall
 
 create-verification-skill and maintain-verification-skill write and look up
 project verification skills under .agents/skills/verify-<app>/ instead of
 .cursor/skills/verify-<app>/.
 
-how, why, blast-radius, no-comments, and teach follow host.md: no model
-slugs, workers optional, verify-aqualung for this repo. why searches git
-and gh first and names gaps for sources it cannot reach. no-comments
-inlines Comment Sicko instead of a plugin subagent. teach runs how and
-why, then explains at the person's pace. bro restates the last message
-in plain language.
+how, why, blast-radius, no-comments, teach, architect, arena, swarm,
+interrogate, figure-it-out, show-me-your-work, and recall follow host.md:
+no model slugs, workers optional, verify-aqualung for this repo. why
+searches git and gh first and names gaps for sources it cannot reach.
+no-comments inlines Comment Sicko instead of a plugin subagent. teach
+runs how and why, then explains at the person's pace. bro restates the
+last message in plain language. recall uses git/gh; chat logs are
+optional.
 
 verify-aqualung lives at .agents/skills/verify-aqualung/.
 
