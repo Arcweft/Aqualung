@@ -3,8 +3,10 @@
 #   ghcr.io/arcweft/aqualung:stable
 #   ghcr.io/arcweft/aqualung:alpha
 #
-# Org packages start private. An org owner must set visibility to Public
-# once: https://github.com/orgs/Arcweft/packages/container/package/aqualung
+# Org packages start private. An org owner must once:
+#   https://github.com/orgs/Arcweft/packages/container/package/aqualung
+# 1. Package settings → Change visibility → Public
+# 2. Manage Actions access → Arcweft/aqualung → Write
 
 name: ghcr
 
