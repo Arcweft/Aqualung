@@ -135,8 +135,8 @@ aqualung 侧已写明、且本设计遵守的约束：
 
 - [README.md](../README.md)
 - [Topside 设计输入](topside-inputs.md)
-- [Phone attach](../.cursor/skills/verify-aqualung/features/phone-attach.md)
-- [Host away](../.cursor/skills/verify-aqualung/features/host-away.md)
-- [Snorkel replace](../.cursor/skills/verify-aqualung/features/snorkel-replace.md)
-- [Session fan-out](../.cursor/skills/verify-aqualung/features/session-fanout.md)
-- [Home bypass](../.cursor/skills/verify-aqualung/features/home-bypass.md)
+- [Phone attach](../.agents/skills/verify-aqualung/features/phone-attach.md)
+- [Host away](../.agents/skills/verify-aqualung/features/host-away.md)
+- [Snorkel replace](../.agents/skills/verify-aqualung/features/snorkel-replace.md)
+- [Session fan-out](../.agents/skills/verify-aqualung/features/session-fanout.md)
+- [Home bypass](../.agents/skills/verify-aqualung/features/home-bypass.md)

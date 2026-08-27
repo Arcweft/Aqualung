@@ -4,7 +4,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 ## Baseline preconditions
 
-- Export `AQUALUNG_VERIFY_RUN` and put `.cursor/skills/verify-aqualung/bin` on `PATH`.
+- Export `AQUALUNG_VERIFY_RUN` and put `.agents/skills/verify-aqualung/bin` on `PATH`.
 - Run `control-aqualung doctor --save`. Drive only when it exits 0.
 - If doctor exits 2 (`design`) or 1 (`incomplete`), save `doctor.json` and stop. The features below are unreachable.
 - Never drive a listener on 1943 or 7678 that this run did not start.

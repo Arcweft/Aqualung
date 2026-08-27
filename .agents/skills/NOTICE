@@ -1,8 +1,9 @@
 The skills in this directory are copied from
 https://github.com/cursor/plugins/tree/main/pstack/skills
-(commit 799151d, pstack 0.14.4).
+(commit 799151d, pstack 0.14.4), except verify-aqualung, which is this
+repository's project verification skill.
 
-Included:
+Included from pstack:
 - principle-* (21 skills)
 - unslop, tdd, technical-writing
 - create-verification-skill, maintain-verification-skill
@@ -10,6 +11,8 @@ Included:
 create-verification-skill and maintain-verification-skill write and look up
 project verification skills under .agents/skills/verify-<app>/ instead of
 .cursor/skills/verify-<app>/.
+
+verify-aqualung lives at .agents/skills/verify-aqualung/.
 
 Copyright (c) 2026 Lauren Tan
 

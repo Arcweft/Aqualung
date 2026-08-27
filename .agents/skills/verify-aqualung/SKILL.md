@@ -18,14 +18,14 @@ Repo root is three levels above this file: the directory that contains `README.m
 Put the helper on `PATH` or invoke it by path:
 
 ```
-.cursor/skills/verify-aqualung/bin/control-aqualung
+.agents/skills/verify-aqualung/bin/control-aqualung
 ```
 
 Set `AQUALUNG_VERIFY_RUN` to a unique id for this attempt. All artifacts and PID state key off it.
 
 ```
 export AQUALUNG_VERIFY_RUN=verify-$RANDOM
-export PATH="$PWD/.cursor/skills/verify-aqualung/bin:$PATH"
+export PATH="$PWD/.agents/skills/verify-aqualung/bin:$PATH"
 ```
 
 Run `control-aqualung launch`. Completion: stdout is a doctor JSON object.
@@ -73,7 +73,7 @@ Whenever anything looks off, run this first:
 control-aqualung doctor --save
 ```
 
-Completion: stdout JSON, exit code as below, and with `--save` a copy at `.cursor/skills/verify-aqualung/artifacts/$AQUALUNG_VERIFY_RUN/doctor.json`.
+Completion: stdout JSON, exit code as below, and with `--save` a copy at `.agents/skills/verify-aqualung/artifacts/$AQUALUNG_VERIFY_RUN/doctor.json`.
 
 | Exit | `stage` | Meaning |
 |------|---------|---------|
@@ -104,7 +104,7 @@ Stable handles: port `1943`, port `7678`, header `Authorization: Bearer`, JSON-R
 
 ## Evidence
 
-Write under `.cursor/skills/verify-aqualung/artifacts/$AQUALUNG_VERIFY_RUN/`. Cleanup must not delete this directory.
+Write under `.agents/skills/verify-aqualung/artifacts/$AQUALUNG_VERIFY_RUN/`. Cleanup must not delete this directory.
 
 Every proof includes:
 
