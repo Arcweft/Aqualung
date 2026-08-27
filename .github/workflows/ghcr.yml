@@ -17,6 +17,8 @@ on:
 permissions:
   contents: read
   packages: write
+  attestations: write
+  id-token: write
 
 concurrency:
   group: ghcr-${{ github.ref }}
@@ -54,6 +56,8 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           build-args: |
             GROK_VERSION=${{ matrix.grok }}
           tags: |
