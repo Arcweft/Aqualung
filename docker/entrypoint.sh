@@ -8,6 +8,13 @@ TOKEN=${TOPSIDE_TOKEN:-}
 
 mkdir -p "$GROK_HOME" "$PKI"
 
+# Dummy or real XAI_API_KEY: skip the GET /api-key probe. 401 on a dummy
+# would leave auth_method_id unset and session/new would auth_required.
+# Do not overwrite a config the operator already mounted.
+if [ -n "${XAI_API_KEY:-}" ] && [ ! -f "$GROK_HOME/config.toml" ]; then
+  printf '%s\n' '[auth]' 'preferred_method = "api_key"' >"$GROK_HOME/config.toml"
+fi
+
 if [ -z "$TOKEN" ]; then
   TOKEN=$(openssl rand -hex 16)
   echo "TOPSIDE_TOKEN=$TOKEN" >&2

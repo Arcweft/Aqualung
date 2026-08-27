@@ -14,7 +14,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 - Start every recipe from the baseline unless its preconditions say otherwise.
 - Treat every command as literal. Keep quoted JSON and flags unchanged.
-- Phone actions go through `control-aqualung phone`.
+- Phone actions go through `control-aqualung phone` or `control-aqualung session-load`.
 - Restore nothing on disk for topside. It writes none. Scratch certs and tokens live only in this run's state.
 - Do not remove proof artifacts during cleanup.
 
@@ -41,6 +41,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 ## Features
 
 - [Phone attach](./phone-attach.md) covers bearer auth on 7678 and topside answering `initialize`.
+- [Session load](./session-load.md) covers `session/new` then `session/load` on one phone socket against a live `leader.sock`.
 - [Host away](./host-away.md) covers the phone being told the host is away when home is offline.
 - [Snorkel replace](./snorkel-replace.md) covers a new snorkel connection replacing the wedged one.
 - [Session fan-out](./session-fanout.md) covers session updates reaching every phone watching that session.

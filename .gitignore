@@ -1,5 +1,7 @@
 /target
 .DS_Store
+__pycache__/
+*.pyc
 
 # Certificates and tokens never belong in the repo.
 *.pem

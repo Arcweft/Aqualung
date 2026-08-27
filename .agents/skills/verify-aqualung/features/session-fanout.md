@@ -19,7 +19,7 @@ Preconditions:
 
 - Doctor exits 0.
 - Phone attach works for two tokens or two connections with the same token, whichever Launch documents as the real phone auth.
-- `control-aqualung phone` is a single round trip. If Launch has not grown two concurrent listeners, record fan-out as unreachable. Do not fake it with two sequential `initialize` calls.
+- Two phones must stay connected at once. `session-load` holds one connection. If Launch has not grown two concurrent listeners, record fan-out as unreachable. Do not fake it with two sequential `initialize` calls.
 
 - **Attach A.** Connect phone A and `initialize`.
 - **Attach B.** Connect phone B and `initialize` while A stays up.

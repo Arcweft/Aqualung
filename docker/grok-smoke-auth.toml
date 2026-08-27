@@ -1,0 +1,5 @@
+# Pin API-key auth so initialize does not HTTP-probe XAI_API_KEY.
+# A dummy key then lets session/new mint a local sessionId.
+# session/prompt still talks to the model and will fail with a dummy.
+[auth]
+preferred_method = "api_key"

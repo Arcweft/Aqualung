@@ -10,28 +10,45 @@ fi
 ARTIFACT_DIR="$SKILL_DIR/artifacts/$RUN_ID"
 RUN_DIR="$SKILL_DIR/run/$RUN_ID"
 STATE_FILE="$RUN_DIR/state"
-PHONE_PY="$SKILL_DIR/bin/phone.py"
+PHONE_PY="$ROOT/docker/phone.py"
 
 SNORKEL_PORT=1943
 TOPSIDE_PHONE_PORT=7678
+DEFAULT_IMAGE=${AQUALUNG_VERIFY_IMAGE:-ghcr.io/arcweft/aqualung:stable}
+
+KIND=""
+CONTAINER=""
+PHONE_PORT_OWNED=""
+SNORKEL_PORT_OWNED=""
+TOPSIDE_PID=""
+SNORKEL_PID=""
 
 usage() {
   cat <<EOF
 control-aqualung <command>
 
   doctor [--save]   Read-only health check. Exit 0 driveable, 2 design-stage, 1 otherwise.
-  launch            Start a disposable instance. Refuses if binaries are missing or ports are foreign.
-  cleanup           Kill only PIDs recorded for this RUN_ID. Leaves artifacts in place.
-  phone --token T --send JSON [--host H] [--port P]
-                    One WebSocket JSON-RPC round trip to topside. Only after doctor exits 0.
+  launch            Start local topside+snorkel with a missing unix socket.
+  launch-image [image]
+                    Start the GHCR image. Owns a real leader.sock inside the container.
+  cleanup           Kill only this RUN_ID's PIDs or container. Leaves artifacts in place.
+  phone --token T --send JSON [--send JSON ...] [--host H] [--port P] [--timeout S]
+                    JSON-RPC on one WebSocket. Replies match by id. Only after doctor exits 0.
+  session-load [--token T] [--host H] [--port P] [--timeout S]
+                    initialize, session/new, session/load on one connection. Retries host-away.
 
 Environment:
-  AQUALUNG_VERIFY_RUN   Run id (default: timestamp). Artifacts and PID state are keyed by this.
+  AQUALUNG_VERIFY_RUN     Run id (default: timestamp). Artifacts and state are keyed by this.
+  AQUALUNG_VERIFY_IMAGE   Default image for launch-image.
 EOF
 }
 
 mkdir_p() {
   mkdir -p "$1"
+}
+
+pick_port() {
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
 }
 
 find_binary() {
@@ -71,18 +88,123 @@ git_head() {
   git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown\n'
 }
 
+clear_state_vars() {
+  KIND=""
+  CONTAINER=""
+  PHONE_PORT_OWNED=""
+  SNORKEL_PORT_OWNED=""
+  TOPSIDE_PID=""
+  SNORKEL_PID=""
+}
+
+read_state() {
+  clear_state_vars
+  if [[ ! -f "$STATE_FILE" ]]; then
+    return 1
+  fi
+  local line first="" second=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    case "$line" in
+      kind=*) KIND=${line#kind=} ;;
+      container=*) CONTAINER=${line#container=} ;;
+      phone_port=*) PHONE_PORT_OWNED=${line#phone_port=} ;;
+      snorkel_port=*) SNORKEL_PORT_OWNED=${line#snorkel_port=} ;;
+      topside_pid=*) TOPSIDE_PID=${line#topside_pid=} ;;
+      snorkel_pid=*) SNORKEL_PID=${line#snorkel_pid=} ;;
+      *)
+        if [[ "$line" =~ ^[0-9]+$ ]]; then
+          if [[ -z "$first" ]]; then
+            first=$line
+          elif [[ -z "$second" ]]; then
+            second=$line
+          fi
+        fi
+        ;;
+    esac
+  done <"$STATE_FILE"
+  if [[ -z "$KIND" && -n "$first" && -n "$second" ]]; then
+    KIND=local
+    TOPSIDE_PID=$first
+    SNORKEL_PID=$second
+  fi
+  return 0
+}
+
+write_local_state() {
+  cat >"$STATE_FILE" <<EOF
+kind=local
+topside_pid=$1
+snorkel_pid=$2
+phone_port=$TOPSIDE_PHONE_PORT
+snorkel_port=$SNORKEL_PORT
+EOF
+}
+
+write_docker_state() {
+  cat >"$STATE_FILE" <<EOF
+kind=docker
+container=$1
+phone_port=$2
+snorkel_port=$3
+EOF
+}
+
+docker_running() {
+  local name=$1
+  [[ -n "$name" ]] || return 1
+  [[ $(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false) == true ]]
+}
+
+container_name() {
+  local raw
+  raw=$(printf '%s' "$RUN_ID" | tr -c 'a-zA-Z0-9._-' '-')
+  printf 'aqualung-verify-%s\n' "$raw"
+}
+
+owned_phone_port() {
+  if [[ -n "${PHONE_PORT_OWNED:-}" ]]; then
+    printf '%s\n' "$PHONE_PORT_OWNED"
+  else
+    printf '%s\n' "$TOPSIDE_PHONE_PORT"
+  fi
+}
+
+run_token() {
+  if [[ -f "$RUN_DIR/token" ]]; then
+    cat "$RUN_DIR/token"
+  fi
+}
+
 emit_doctor() {
-  local snorkel topside pid1943 pid7678 stage driveable reason owned
+  read_state || true
+  local snorkel topside pid1943 pid7678 stage driveable reason owned launch container phone_port
   snorkel=$(find_binary snorkel || true)
   topside=$(find_binary topside || true)
   pid1943=$(listener_pid "$SNORKEL_PORT" || true)
   pid7678=$(listener_pid "$TOPSIDE_PHONE_PORT" || true)
   owned=false
+  launch=""
+  container=""
+  phone_port=$TOPSIDE_PHONE_PORT
   if [[ -f "$STATE_FILE" ]]; then
     owned=true
+    launch=${KIND:-local}
+    container=${CONTAINER:-}
+    phone_port=$(owned_phone_port)
   fi
 
-  if [[ -z "$snorkel" && -z "$topside" ]]; then
+  if [[ "${KIND:-}" == docker ]]; then
+    if docker_running "$CONTAINER"; then
+      stage=ready
+      driveable=true
+      reason="owned docker instance"
+    else
+      stage=idle
+      driveable=false
+      reason="owned docker container is not running"
+    fi
+  elif [[ -z "$snorkel" && -z "$topside" ]]; then
     stage=design
     driveable=false
     reason="no snorkel or topside binary on PATH or in target/{release,debug}"
@@ -104,9 +226,12 @@ emit_doctor() {
     reason="owned instance"
   fi
 
-  python3 - "$ROOT" "$(git_head)" "$(readme_status)" "${snorkel:-}" "${topside:-}" "${pid1943:-}" "${pid7678:-}" "$stage" "$driveable" "$reason" "$owned" "$RUN_ID" <<'PY'
+  python3 - "$ROOT" "$(git_head)" "$(readme_status)" "${snorkel:-}" "${topside:-}" "${pid1943:-}" "${pid7678:-}" "$stage" "$driveable" "$reason" "$owned" "$RUN_ID" "${launch:-}" "${container:-}" "$phone_port" <<'PY'
 import json, sys
-root, head, status, snorkel, topside, pid1943, pid7678, stage, driveable, reason, owned, run_id = sys.argv[1:]
+(
+    root, head, status, snorkel, topside, pid1943, pid7678, stage, driveable,
+    reason, owned, run_id, launch, container, phone_port,
+) = sys.argv[1:]
 doc = {
     "app": "aqualung",
     "run_id": run_id,
@@ -117,6 +242,9 @@ doc = {
     "driveable": driveable == "true",
     "owned_instance": owned == "true",
     "reason": reason,
+    "launch": launch or None,
+    "container": container or None,
+    "phone_port": int(phone_port) if phone_port else 7678,
     "binaries": {
         "snorkel": snorkel or None,
         "topside": topside or None,
@@ -185,6 +313,16 @@ wait_listen() {
   return 1
 }
 
+require_driveable() {
+  local json
+  json=$(emit_doctor)
+  if ! python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin)["driveable"] else 1)' <<<"$json"; then
+    echo "$1 refused: doctor is not driveable. Run doctor --save and stop." >&2
+    return 1
+  fi
+  return 0
+}
+
 cmd_launch() {
   local json stage
   json=$(emit_doctor)
@@ -207,6 +345,12 @@ cmd_launch() {
   if [[ "$stage" == "ready" ]]; then
     printf '%s\n' "$json"
     return 0
+  fi
+  read_state || true
+  if [[ "${KIND:-}" == docker ]]; then
+    printf '%s\n' "$json"
+    echo "launch refused: this run already owns a docker instance. cleanup first." >&2
+    return 1
   fi
 
   local snorkel_bin topside_bin token topside_pid snorkel_pid
@@ -239,7 +383,7 @@ cmd_launch() {
     >"$ARTIFACT_DIR/snorkel.log" 2>&1 &
   snorkel_pid=$!
 
-  printf '%s\n%s\n' "$topside_pid" "$snorkel_pid" >"$STATE_FILE"
+  write_local_state "$topside_pid" "$snorkel_pid"
 
   if ! wait_listen "$SNORKEL_PORT" || ! wait_listen "$TOPSIDE_PHONE_PORT"; then
     echo "launch failed: topside did not listen on 1943 and 7678" >&2
@@ -257,45 +401,227 @@ cmd_launch() {
   doctor_exit "$json"
 }
 
+cmd_launch_image() {
+  local image=${1:-$DEFAULT_IMAGE} json stage token name phone_port snorkel_port
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "launch-image refused: docker is not on PATH." >&2
+    return 1
+  fi
+  json=$(emit_doctor)
+  stage=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["stage"])' <<<"$json")
+  if [[ "$stage" == "ready" ]]; then
+    printf '%s\n' "$json"
+    return 0
+  fi
+  if [[ "$stage" == "foreign" ]]; then
+    echo "note: 1943 or 7678 is busy on this machine. launch-image still binds random host ports." >&2
+  fi
+  read_state || true
+  if [[ "${KIND:-}" == local && -f "$STATE_FILE" ]]; then
+    echo "launch-image refused: this run owns a local instance. cleanup first." >&2
+    return 1
+  fi
+
+  mkdir_p "$RUN_DIR"
+  mkdir_p "$ARTIFACT_DIR"
+  token=$(openssl rand -hex 16)
+  printf '%s\n' "$token" >"$RUN_DIR/token"
+  echo "TOPSIDE_TOKEN=$token" >&2
+  echo "IMAGE=$image" >&2
+
+  name=$(container_name)
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  phone_port=$(pick_port)
+  snorkel_port=$(pick_port)
+
+  local api_key=${XAI_API_KEY:-aqualung-smoke-not-a-key}
+  if [[ "$api_key" == aqualung-smoke-not-a-key ]]; then
+    echo "XAI_API_KEY=aqualung-smoke-not-a-key (dummy; session/prompt will fail)" >&2
+  else
+    echo "XAI_API_KEY is set" >&2
+  fi
+
+  if ! docker run -d --name "$name" --init \
+    -p "127.0.0.1:${phone_port}:7678" \
+    -p "127.0.0.1:${snorkel_port}:1943" \
+    -e TOPSIDE_TOKEN="$token" \
+    -e XAI_API_KEY="$api_key" \
+    -v "$ROOT/docker/grok-smoke-auth.toml:/var/lib/grok/config.toml:ro" \
+    "$image" >"$ARTIFACT_DIR/docker-run.out" 2>"$ARTIFACT_DIR/docker-run.err"; then
+    cat "$ARTIFACT_DIR/docker-run.err" >&2
+    echo "launch-image refused: docker run failed." >&2
+    return 1
+  fi
+
+  write_docker_state "$name" "$phone_port" "$snorkel_port"
+
+  local i
+  for i in $(seq 1 150); do
+    if docker exec "$name" sh -c 'test -S /var/lib/grok/leader.sock' 2>/dev/null; then
+      break
+    fi
+    if ! docker_running "$name"; then
+      docker logs "$name" >&2 || true
+      echo "launch-image failed: container exited before leader socket" >&2
+      rm -f "$STATE_FILE"
+      return 1
+    fi
+    if [[ "$i" -eq 150 ]]; then
+      docker logs "$name" >&2 || true
+      echo "launch-image failed: leader socket did not appear" >&2
+      docker rm -f "$name" >/dev/null 2>&1 || true
+      rm -f "$STATE_FILE"
+      return 1
+    fi
+    sleep 0.2
+  done
+
+  for i in $(seq 1 100); do
+    if docker exec "$name" sh -c 'grep -q leader.client.registered /var/lib/grok/logs/unified.jsonl' 2>/dev/null; then
+      break
+    fi
+    if ! docker_running "$name"; then
+      docker logs "$name" >&2 || true
+      echo "launch-image failed: container exited before Register" >&2
+      rm -f "$STATE_FILE"
+      return 1
+    fi
+    if [[ "$i" -eq 100 ]]; then
+      docker logs "$name" >&2 || true
+      echo "launch-image failed: topside did not register with leader" >&2
+      docker rm -f "$name" >/dev/null 2>&1 || true
+      rm -f "$STATE_FILE"
+      return 1
+    fi
+    sleep 0.2
+  done
+
+  json=$(emit_doctor)
+  printf '%s\n' "$json"
+  doctor_exit "$json"
+}
+
 cmd_cleanup() {
   if [[ ! -f "$STATE_FILE" ]]; then
     echo "no owned instance for run $RUN_ID"
     return 0
   fi
-  local pid
-  while read -r pid; do
-    [[ -z "$pid" ]] && continue
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
+  read_state || true
+  if [[ "${KIND:-}" == docker ]]; then
+    if [[ -n "${CONTAINER:-}" ]]; then
+      docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
     fi
-  done <"$STATE_FILE"
+  else
+    local pid
+    for pid in "${TOPSIDE_PID:-}" "${SNORKEL_PID:-}"; do
+      [[ -z "$pid" ]] && continue
+      if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done
+  fi
   rm -f "$STATE_FILE"
   rmdir "$RUN_DIR" 2>/dev/null || true
   echo "cleaned run $RUN_ID (artifacts kept)"
 }
 
 cmd_phone() {
-  local token="" send="" host="127.0.0.1" port="$TOPSIDE_PHONE_PORT"
+  local token="" host="127.0.0.1" port="" timeout="10" probe=0 load_id=""
+  local -a sends=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --token) token=$2; shift 2 ;;
-      --send) send=$2; shift 2 ;;
+      --send) sends+=("$2"); shift 2 ;;
       --host) host=$2; shift 2 ;;
       --port) port=$2; shift 2 ;;
+      --timeout) timeout=$2; shift 2 ;;
+      --load-id) load_id=$2; shift 2 ;;
+      --probe-session) probe=1; shift ;;
       *) echo "unknown phone flag: $1" >&2; return 1 ;;
     esac
   done
-  if [[ -z "$token" || -z "$send" ]]; then
-    echo "phone requires --token and --send" >&2
+  if [[ "$probe" -eq 0 && ${#sends[@]} -eq 0 ]]; then
+    echo "phone requires --send or --probe-session" >&2
     return 1
   fi
-  local json
-  json=$(emit_doctor)
-  if ! python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin)["driveable"] else 1)' <<<"$json"; then
-    echo "phone refused: doctor is not driveable. Run doctor --save and stop." >&2
+  if [[ -z "$token" ]]; then
+    echo "phone requires --token" >&2
     return 1
   fi
-  python3 "$PHONE_PY" --host "$host" --port "$port" --token "$token" --send "$send"
+  require_driveable phone || return 1
+  read_state || true
+  if [[ -z "$port" ]]; then
+    port=$(owned_phone_port)
+  fi
+  local -a args=(python3 "$PHONE_PY" --host "$host" --port "$port" --token "$token" --timeout "$timeout")
+  local send
+  for send in "${sends[@]+"${sends[@]}"}"; do
+    args+=(--send "$send")
+  done
+  if [[ -n "$load_id" ]]; then
+    args+=(--load-id "$load_id")
+  fi
+  if [[ "$probe" -eq 1 ]]; then
+    args+=(--probe-session)
+  fi
+  "${args[@]}"
+}
+
+cmd_session_load() {
+  local token="" host="127.0.0.1" port="" timeout="30"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --token) token=$2; shift 2 ;;
+      --host) host=$2; shift 2 ;;
+      --port) port=$2; shift 2 ;;
+      --timeout) timeout=$2; shift 2 ;;
+      *) echo "unknown session-load flag: $1" >&2; return 1 ;;
+    esac
+  done
+  require_driveable session-load || return 1
+  read_state || true
+  if [[ -z "$token" ]]; then
+    token=$(run_token)
+  fi
+  if [[ -z "$token" ]]; then
+    echo "session-load requires --token or a token file from launch" >&2
+    return 1
+  fi
+  if [[ -z "$port" ]]; then
+    port=$(owned_phone_port)
+  fi
+
+  mkdir_p "$ARTIFACT_DIR/session-load"
+  local deadline probe_code=1 probe_out="" started
+  started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  deadline=$((SECONDS + 120))
+  while (( SECONDS < deadline )); do
+    probe_code=0
+    probe_out=$(python3 "$PHONE_PY" --host "$host" --port "$port" --token "$token" --timeout "$timeout" --probe-session) || probe_code=$?
+    if [[ "$probe_code" -eq 0 || "$probe_code" -eq 3 ]]; then
+      break
+    fi
+    sleep 0.4
+  done
+
+  printf '%s\n' "$probe_out" >"$ARTIFACT_DIR/session-load/probe.ndjson"
+  {
+    printf 'started %s\n' "$started"
+    printf 'host %s port %s timeout %s\n' "$host" "$port" "$timeout"
+    printf 'exit %s\n' "$probe_code"
+    printf 'feature session-load entry 7678\n'
+  } >"$ARTIFACT_DIR/session-load/probe.cmd.txt"
+  printf '%s\n' "$probe_out"
+
+  if [[ "$probe_code" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "$probe_code" -eq 3 ]]; then
+    echo "session/new reached grok without a sessionId; session/load not sent" >&2
+    return 3
+  fi
+  echo "session-load failed: session/new stayed host-away or the socket dropped" >&2
+  return 1
 }
 
 cmd=${1:-}
@@ -303,8 +629,10 @@ shift || true
 case "$cmd" in
   doctor) cmd_doctor "$@" ;;
   launch) cmd_launch "$@" ;;
+  launch-image) cmd_launch_image "$@" ;;
   cleanup) cmd_cleanup "$@" ;;
   phone) cmd_phone "$@" ;;
+  session-load) cmd_session_load "$@" ;;
   -h|--help|help|"") usage; exit 0 ;;
   *) echo "unknown command: $cmd" >&2; usage; exit 1 ;;
 esac

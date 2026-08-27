@@ -109,7 +109,7 @@ topside 记下 `Registered` 里的 `leader_protocol_version` 和 `leader_binary_
 
 ## 尚未证实的事
 
-- Launch 把 snorkel 指到不存在的 unix socket，所以它不拨 TLS。phone-attach 可以在 doctor `"stage": "ready"` 下用 `control-aqualung phone` 证明。host-away、snorkel-replace、session-fan-out 在 `cargo test -p topside` 里证明。home-bypass 在缺少真实 `leader.sock` 时仍无法用运行时证明。
+- `session/new` 和 `session/load` 已经在 GHCR 镜像上跑通：dummy `XAI_API_KEY` 加上 `[auth] preferred_method = "api_key"`，`session/new` 会在本地 mint `sessionId`，同一条 7678 连接再 `session/load`。Phone `initialize` 仍是 topside 本地应答，不能当 load 的证据。dummy 过不了 `session/prompt`。
 - `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。验证图没有写忙闸。Grok leader 源码没有在 IPC 层挡住第二份 prompt。不要先假设 leader 会挡。
 - Windows named pipe 不在范围内。家里的机器是 macOS。
 

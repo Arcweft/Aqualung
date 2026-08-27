@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
+# Prove a GHCR image starts grok, Registers through snorkel, answers initialize
+# locally, then forwards session/new and session/load on one 7678 connection.
+#
+# Lives under docker/ so CI does not import .agents/. The phone client is
+# docker/phone.py, also used by control-aqualung.
 set -euo pipefail
 
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PHONE_PY="$ROOT/docker/phone.py"
 IMAGE=${1:?usage: docker/smoke.sh <image> [grok-version]}
 WANT_GROK=${2:-}
 TOKEN=smoke-ci
 NAME=aqualung-smoke-$$
+SMOKE_KEY=${XAI_API_KEY:-aqualung-smoke-not-a-key}
+AUTH_TOML="$ROOT/docker/grok-smoke-auth.toml"
 INIT='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{}}'
+
+if ! python3 "$ROOT/docker/phone_test.py" >/dev/null 2>&1; then
+  python3 "$ROOT/docker/phone_test.py" >&2
+  exit 1
+fi
 
 pick_port() {
   python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
@@ -15,64 +29,7 @@ PHONE_PORT=$(pick_port)
 SNORKEL_PORT=$(pick_port)
 
 phone() {
-  python3 - "$PHONE_PORT" "$1" "$INIT" <<'PY'
-import base64, hashlib, os, socket, struct, sys
-
-host, port, token, payload = "127.0.0.1", int(sys.argv[1]), sys.argv[2], sys.argv[3]
-
-
-def recv_exact(sock, n):
-    buf = b""
-    while len(buf) < n:
-        chunk = sock.recv(n - len(buf))
-        if not chunk:
-            raise ConnectionError("closed")
-        buf += chunk
-    return buf
-
-
-sock = None
-try:
-    sock = socket.create_connection((host, port), timeout=5)
-    sock.settimeout(5)
-    key = base64.b64encode(os.urandom(16)).decode("ascii")
-    sock.sendall(
-        (
-            f"GET / HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\n"
-            f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
-            f"Sec-WebSocket-Version: 13\r\nAuthorization: Bearer {token}\r\n\r\n"
-        ).encode("ascii")
-    )
-    buf = b""
-    while b"\r\n\r\n" not in buf:
-        chunk = sock.recv(4096)
-        if not chunk:
-            raise ConnectionError("closed during handshake")
-        buf += chunk
-    status = buf.split(b"\r\n", 1)[0]
-    if b" 101 " not in status:
-        raise ConnectionError(status.decode("ascii", "replace"))
-    mask = os.urandom(4)
-    data = payload.encode("utf-8")
-    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
-    header = bytearray([0x81, 0x80 | len(data)])
-    sock.sendall(bytes(header) + mask + masked)
-    hdr = recv_exact(sock, 2)
-    n = hdr[1] & 0x7F
-    if n == 126:
-        n = struct.unpack("!H", recv_exact(sock, 2))[0]
-    elif n == 127:
-        n = struct.unpack("!Q", recv_exact(sock, 8))[0]
-    if hdr[1] & 0x80:
-        recv_exact(sock, 4)
-    sys.stdout.write(recv_exact(sock, n).decode("utf-8"))
-except OSError as exc:
-    print(str(exc), file=sys.stderr)
-    sys.exit(1)
-finally:
-    if sock is not None:
-        sock.close()
-PY
+  python3 "$PHONE_PY" --host 127.0.0.1 --port "$PHONE_PORT" --token "$1" --timeout 5 --send "$INIT"
 }
 
 cleanup() {
@@ -84,6 +41,8 @@ docker run -d --name "$NAME" --init \
   -p "127.0.0.1:${PHONE_PORT}:7678" \
   -p "127.0.0.1:${SNORKEL_PORT}:1943" \
   -e TOPSIDE_TOKEN="$TOKEN" \
+  -e XAI_API_KEY="$SMOKE_KEY" \
+  -v "$AUTH_TOML:/var/lib/grok/config.toml:ro" \
   "$IMAGE" >/dev/null
 
 wait_running() {
@@ -169,9 +128,38 @@ if [[ "$reject_out" != *401* ]]; then
   exit 1
 fi
 
+# Hub may still be BringingUp after Register. Retry until session/new is
+# forwarded, then session/load on the same connection.
+deadline=$((SECONDS + 120))
+probe_code=1
+probe_out=""
+while (( SECONDS < deadline )); do
+  probe_code=0
+  probe_out=$(python3 "$PHONE_PY" --host 127.0.0.1 --port "$PHONE_PORT" --token "$TOKEN" --timeout 30 --probe-session) || probe_code=$?
+  if [[ "$probe_code" -eq 0 ]]; then
+    break
+  fi
+  if [[ $(wait_running) != true ]]; then
+    fail_logs
+    printf '%s\n' "$probe_out" >&2
+    echo "container exited during session/load probe" >&2
+    exit 1
+  fi
+  sleep 0.4
+done
+
+if [[ "$probe_code" -eq 0 ]]; then
+  printf '%s\n' "$probe_out"
+else
+  fail_logs
+  printf '%s\n' "$probe_out" >&2
+  echo "session/new+load did not complete on 7678" >&2
+  exit 1
+fi
+
 if [[ $(wait_running) != true ]]; then
   fail_logs
-  echo "container exited after phone attach" >&2
+  echo "container exited after session probe" >&2
   exit 1
 fi
 
