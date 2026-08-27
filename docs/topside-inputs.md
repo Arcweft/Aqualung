@@ -8,7 +8,7 @@
 | --- | --- |
 | 本仓库 `README.md`、`README.zh-CN.md` | 产品合同 |
 | 本仓库 `crates/snorkel` | 1943 拨号端 |
-| 本仓库 `.cursor/skills/verify-aqualung/` | 可观察行为与 `phone.py` 握手 |
+| 本仓库 `.agents/skills/verify-aqualung/` | 可观察行为与 `phone.py` 握手 |
 | [xai-org/grok-build](https://github.com/xai-org/grok-build) 提交 `77cd7eb675ba911c225c3aaeeece3a20cbccc426` | leader 线协议 |
 | [ACP v1](https://agentclientprotocol.com/protocol/v1/overview.md) | 手机侧 JSON-RPC |
 | crates.io `agent-client-protocol` 2.0.0、`agent-client-protocol-schema` 1.7.0、`agent-client-protocol-http` 2.0.0（2026-08-26） | 官方 Rust SDK 版本 |
@@ -36,11 +36,11 @@
 
 | 功能 | 可观察结果 |
 | --- | --- |
-| [Phone attach](../.cursor/skills/verify-aqualung/features/phone-attach.md) | 错误 token 在 ACP 开始前失败。正确 token 后 `initialize` 得到 topside 自己的 JSON-RPC 结果或错误，不依赖家里 agent 活着。 |
-| [Host away](../.cursor/skills/verify-aqualung/features/host-away.md) | 家里掉线后，已连接的手机收到主机不在。7678 上的 WebSocket 保持。关掉 7678 不是 host-away。 |
-| [Snorkel replace](../.cursor/skills/verify-aqualung/features/snorkel-replace.md) | 第二份已鉴权 snorkel 接管。第一份不再是活的家里连接。已连接的手机不被锁在外面。第二张客户端证书是另一个用户，不是替换。 |
-| [Session fan-out](../.cursor/skills/verify-aqualung/features/session-fanout.md) | 两部手机看同一场时，一场的更新送到两部。请求 id 碰撞时一部看不到另一部的结果。没在看的手机收不到那场更新。 |
-| [Home bypass](../.cursor/skills/verify-aqualung/features/home-bypass.md) | 家里编辑器走 unix socket。杀掉 topside 后家里 socket 仍应答。手机能力里没有 topside 替家里代报的 fs、terminal、tools。 |
+| [Phone attach](../.agents/skills/verify-aqualung/features/phone-attach.md) | 错误 token 在 ACP 开始前失败。正确 token 后 `initialize` 得到 topside 自己的 JSON-RPC 结果或错误，不依赖家里 agent 活着。 |
+| [Host away](../.agents/skills/verify-aqualung/features/host-away.md) | 家里掉线后，已连接的手机收到主机不在。7678 上的 WebSocket 保持。关掉 7678 不是 host-away。 |
+| [Snorkel replace](../.agents/skills/verify-aqualung/features/snorkel-replace.md) | 第二份已鉴权 snorkel 接管。第一份不再是活的家里连接。已连接的手机不被锁在外面。第二张客户端证书是另一个用户，不是替换。 |
+| [Session fan-out](../.agents/skills/verify-aqualung/features/session-fanout.md) | 两部手机看同一场时，一场的更新送到两部。请求 id 碰撞时一部看不到另一部的结果。没在看的手机收不到那场更新。 |
+| [Home bypass](../.agents/skills/verify-aqualung/features/home-bypass.md) | 家里编辑器走 unix socket。杀掉 topside 后家里 socket 仍应答。手机能力里没有 topside 替家里代报的 fs、terminal、tools。 |
 
 本机没有 `target/debug/snorkel` 时，`control-aqualung doctor` 退出 2，`"stage": "design"`。这是本机跑过的。`emit_doctor` 只找到一侧二进制时把 stage 设为 `"incomplete"` 并退出 1。本机 rustc 1.83 编不了 edition 2024 的 snorkel，所以 `"stage": "incomplete"` 没有用真实二进制跑过。Launch 在缺少 `topside --help` 时拒绝启动。
 
@@ -197,7 +197,7 @@ Grok 工作区依赖 `agent-client-protocol = "0.10.4"`，feature `unstable`。�
 
 对手机，topside 是 ACP Agent。手机是 Client。
 
-验证客户端 `.cursor/skills/verify-aqualung/bin/phone.py` 的握手是：
+验证客户端 `.agents/skills/verify-aqualung/bin/phone.py` 的握手是：
 
 - 明文 TCP 到 `127.0.0.1:7678`
 - `GET / HTTP/1.1`
