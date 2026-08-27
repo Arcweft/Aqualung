@@ -110,6 +110,7 @@ topside 记下 `Registered` 里的 `leader_protocol_version` 和 `leader_binary_
 ## 尚未证实的事
 
 - `session/new` 和 `session/load` 已经在 GHCR 镜像上跑通：dummy `XAI_API_KEY` 加上 `[auth] preferred_method = "api_key"`，`session/new` 会在本地 mint `sessionId`，同一条 7678 连接再 `session/load`。Phone `initialize` 仍是 topside 本地应答，不能当 load 的证据。dummy 过不了 `session/prompt`。
+- `session/prompt` 已经在本机 `launch-home` 上跑通：host `GROK_HOME` 登录，独立的 `leader.sock`（不是交互窗口那条）。证明是 `session/prompt` 的 `stopReason`。这还不是家里 TUI 和手机共用同一份 Agent。
 - `session/prompt` 在途时，另一部手机再 prompt，Agent 侧是排队还是拒绝。验证图没有写忙闸。Grok leader 源码没有在 IPC 层挡住第二份 prompt。不要先假设 leader 会挡。
 - Windows named pipe 不在范围内。家里的机器是 macOS。
 

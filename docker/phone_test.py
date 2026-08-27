@@ -141,6 +141,19 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(obj["params"]["cwd"], "/tmp")
         self.assertEqual(obj["params"]["mcpServers"], [])
 
+    def test_prompt_request_is_acp_text_blocks(self) -> None:
+        obj = json.loads(client.prompt_request(3, "sess_1", "PONG"))
+        self.assertEqual(obj["method"], "session/prompt")
+        self.assertEqual(obj["params"]["sessionId"], "sess_1")
+        self.assertEqual(obj["params"]["prompt"], [{"type": "text", "text": "PONG"}])
+
+    def test_stop_reason(self) -> None:
+        self.assertEqual(
+            client.stop_reason({"result": {"stopReason": "end_turn"}}),
+            "end_turn",
+        )
+        self.assertIsNone(client.stop_reason({"result": {}}))
+
     def test_away_error(self) -> None:
         self.assertTrue(
             client.is_away_error({"error": {"code": -32003, "message": "host is away"}})
@@ -248,6 +261,80 @@ class ExchangeTests(unittest.TestCase):
             conn.sock.close()
             server.join(1)
         self.assertEqual(code, client.EXIT_NO_SESSION)
+
+
+    def test_probe_prompt_skips_session_update(self) -> None:
+        init_result = json.dumps(
+            {"jsonrpc": "2.0", "id": 0, "result": {"protocolVersion": 1, "authMethods": []}}
+        ).encode()
+        created = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "result": {"sessionId": "sess_live"}}
+        ).encode()
+        chunk = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": "sess_live",
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {"type": "text", "text": "PONG"},
+                    },
+                },
+            }
+        ).encode()
+        done = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {"stopReason": "end_turn"},
+            }
+        ).encode()
+        server = ScriptedServer(
+            {
+                "initialize": [_unmasked_frame(init_result)],
+                "session/new": [_unmasked_frame(created)],
+                "session/prompt": [_unmasked_frame(chunk), _unmasked_frame(done)],
+            }
+        )
+        server.start()
+        self.assertTrue(server.ready.wait(1))
+        conn = client.connect("127.0.0.1", server.port, "tok", 2)
+        try:
+            code = client.probe_prompt(conn, "PONG")
+        finally:
+            conn.sock.close()
+            server.join(1)
+        self.assertEqual(code, 0)
+        if server.error:
+            raise server.error
+
+    def test_probe_prompt_away_on_new(self) -> None:
+        init_result = json.dumps(
+            {"jsonrpc": "2.0", "id": 0, "result": {"protocolVersion": 1, "authMethods": []}}
+        ).encode()
+        away_err = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32003, "message": "host is away"},
+            }
+        ).encode()
+        server = ScriptedServer(
+            {
+                "initialize": [_unmasked_frame(init_result)],
+                "session/new": [_unmasked_frame(away_err)],
+            }
+        )
+        server.start()
+        self.assertTrue(server.ready.wait(1))
+        conn = client.connect("127.0.0.1", server.port, "tok", 2)
+        try:
+            code = client.probe_prompt(conn, "PONG")
+        finally:
+            conn.sock.close()
+            server.join(1)
+        self.assertEqual(code, client.EXIT_AWAY)
 
 
 if __name__ == "__main__":

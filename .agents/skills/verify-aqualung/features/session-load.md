@@ -15,8 +15,8 @@ Session load is a phone re-opening a session that already exists on the home age
 
 Preconditions:
 
-- `control-aqualung launch-image` has been run for this `AQUALUNG_VERIFY_RUN`. Local `launch` points snorkel at a missing unix socket. That path cannot forward session methods. Record it as unreachable.
-- `control-aqualung doctor --save` exits 0. Doctor names `"launch": "docker"`.
+- `control-aqualung launch-home` or `control-aqualung launch-image` has been run for this `AQUALUNG_VERIFY_RUN`. Local `launch` points snorkel at a missing unix socket. That path cannot forward session methods. Record it as unreachable.
+- `control-aqualung doctor --save` exits 0. Doctor names `"launch": "home"` or `"launch": "docker"`.
 - The token is `run/$AQUALUNG_VERIFY_RUN/token`.
 
 - **Mux is up.** Run `control-aqualung session-load`. It retries while `session/new` is `host is away`.
@@ -31,5 +31,5 @@ Preconditions:
 - `leader.client.registered` in grok logs proves Register, not `session/load`.
 - First attach does not make Hub send `session/load` by itself. The phone must send it.
 - `control-aqualung phone` with one `--send` still closes after one reply. Use `session-load` or several `--send` on one invocation.
-- Empty `GROK_HOME` has no `auth.json`. `launch-image` and `docker/smoke.sh` set a dummy `XAI_API_KEY` and pin `[auth] preferred_method = "api_key"` so grok selects a method without probing the live API. `session/new` then mints a local `sessionId`. `session/prompt` is not this feature and will fail with that dummy. A real key in `XAI_API_KEY` is used instead of the dummy when present.
+- Empty `GROK_HOME` has no `auth.json`. `launch-image` and `docker/smoke.sh` set a dummy `XAI_API_KEY` and pin `[auth] preferred_method = "api_key"` so grok selects a method without probing the live API. `session/new` then mints a local `sessionId`. `launch-home` uses host grok auth instead. `session/prompt` is not this feature and will fail with that dummy.
 - topside answers phone `authenticate` itself (`-32601`). It does not log the follower into grok. The dummy is for the Agent process, not for 7678.

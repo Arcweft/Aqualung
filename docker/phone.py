@@ -22,6 +22,7 @@ from typing import Any
 
 INIT = '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{}}'
 NEW = '{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}'
+DEFAULT_PROMPT = "Reply with the single word PONG and nothing else."
 
 # Host is still BringingUp. Caller should reconnect later.
 EXIT_AWAY = 4
@@ -210,6 +211,41 @@ def load_request(rpc_id: Any, session: str) -> str:
     )
 
 
+def prompt_request(rpc_id: Any, session: str, text: str) -> str:
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session,
+                "prompt": [{"type": "text", "text": text}],
+            },
+        },
+        separators=(",", ":"),
+    )
+
+
+def stop_reason(obj: dict[str, Any]) -> str | None:
+    result = obj.get("result")
+    if isinstance(result, dict):
+        value = result.get("stopReason")
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def new_session_outcome(created: dict[str, Any]) -> tuple[int, str | None]:
+    if is_away_error(created) or is_uninitialized(created):
+        return EXIT_AWAY, None
+    session = session_id_from(created)
+    if session:
+        return 0, session
+    if error_code(created) == -32602:
+        return 1, None
+    return EXIT_NO_SESSION, None
+
+
 def exchange(
     conn: Conn,
     sends: list[str],
@@ -252,16 +288,13 @@ def probe_session(conn: Conn) -> int:
     if len(replies) < 2:
         print("probe: missing session/new reply", file=sys.stderr)
         return 1
-    created = replies[1]
-    if is_away_error(created) or is_uninitialized(created):
-        print("probe: host is away", file=sys.stderr)
-        return EXIT_AWAY
-    session = session_id_from(created)
-    if not session:
-        print("probe: session/new has no sessionId", file=sys.stderr)
-        if error_code(created) == -32602:
-            return 1
-        return EXIT_NO_SESSION
+    code, session = new_session_outcome(replies[1])
+    if code != 0:
+        if code == EXIT_AWAY:
+            print("probe: host is away", file=sys.stderr)
+        else:
+            print("probe: session/new has no sessionId", file=sys.stderr)
+        return code
     if len(replies) < 3:
         print("probe: missing session/load reply", file=sys.stderr)
         return 1
@@ -270,6 +303,39 @@ def probe_session(conn: Conn) -> int:
         print("probe: host is away on session/load", file=sys.stderr)
         return EXIT_AWAY
     print(f"probe: session/load replied sessionId={session}", file=sys.stderr)
+    return 0
+
+
+def probe_prompt(conn: Conn, text: str) -> int:
+    replies, notes = exchange(conn, [INIT, NEW])
+    if len(replies) < 2:
+        write_replies(replies, notes)
+        print("probe: missing session/new reply", file=sys.stderr)
+        return 1
+    code, session = new_session_outcome(replies[1])
+    if code != 0 or not session:
+        write_replies(replies, notes)
+        if code == EXIT_AWAY:
+            print("probe: host is away", file=sys.stderr)
+        else:
+            print("probe: session/new has no sessionId", file=sys.stderr)
+        return code
+    raw = prompt_request(3, session, text)
+    conn.sock.sendall(mask_frame(raw.encode("utf-8")))
+    replies.append(wait_reply(conn, 3, notes))
+    write_replies(replies, notes)
+    prompted = replies[2]
+    if is_away_error(prompted) or is_uninitialized(prompted):
+        print("probe: host is away on session/prompt", file=sys.stderr)
+        return EXIT_AWAY
+    if prompted.get("error") is not None:
+        print("probe: session/prompt error", file=sys.stderr)
+        return 1
+    reason = stop_reason(prompted)
+    if not reason:
+        print("probe: session/prompt has no stopReason", file=sys.stderr)
+        return 1
+    print(f"probe: session/prompt stopReason={reason} sessionId={session}", file=sys.stderr)
     return 0
 
 
@@ -286,18 +352,30 @@ def main() -> int:
         action="store_true",
         help="initialize, session/new, then session/load on this connection",
     )
+    p.add_argument(
+        "--probe-prompt",
+        action="store_true",
+        help="initialize, session/new, then session/prompt on this connection",
+    )
+    p.add_argument("--prompt-text", default=DEFAULT_PROMPT)
     args = p.parse_args()
-    if args.probe_session and args.send:
-        print("--probe-session cannot be combined with --send", file=sys.stderr)
+    probes = int(args.probe_session) + int(args.probe_prompt)
+    if probes and args.send:
+        print("probe flags cannot be combined with --send", file=sys.stderr)
         return 1
-    if not args.probe_session and not args.send:
-        print("phone requires --send or --probe-session", file=sys.stderr)
+    if probes > 1:
+        print("--probe-session cannot be combined with --probe-prompt", file=sys.stderr)
+        return 1
+    if probes == 0 and not args.send:
+        print("phone requires --send, --probe-session, or --probe-prompt", file=sys.stderr)
         return 1
     conn = None
     try:
         conn = connect(args.host, args.port, args.token, args.timeout)
         if args.probe_session:
             return probe_session(conn)
+        if args.probe_prompt:
+            return probe_prompt(conn, args.prompt_text)
         replies, notes = exchange(conn, args.send, load_id=args.load_id)
         write_replies(replies, notes)
         if args.load_id is not None and not any(session_id_from(obj) for obj in replies[:-1]):

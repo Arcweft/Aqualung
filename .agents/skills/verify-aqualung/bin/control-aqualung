@@ -22,6 +22,8 @@ PHONE_PORT_OWNED=""
 SNORKEL_PORT_OWNED=""
 TOPSIDE_PID=""
 SNORKEL_PID=""
+LEADER_PID=""
+LEADER_SOCKET=""
 
 usage() {
   cat <<EOF
@@ -29,6 +31,10 @@ control-aqualung <command>
 
   doctor [--save]   Read-only health check. Exit 0 driveable, 2 design-stage, 1 otherwise.
   launch            Start local topside+snorkel with a missing unix socket.
+  launch-home [socket]
+                    Start topside+snorkel against a live leader.sock. With no
+                    argument, starts grok agent leader on this run's leader.sock.
+                    An argument is an existing socket this run does not own.
   launch-image [image]
                     Start the GHCR image. Owns a real leader.sock inside the container.
   cleanup           Kill only this RUN_ID's PIDs or container. Leaves artifacts in place.
@@ -36,6 +42,8 @@ control-aqualung <command>
                     JSON-RPC on one WebSocket. Replies match by id. Only after doctor exits 0.
   session-load [--token T] [--host H] [--port P] [--timeout S]
                     initialize, session/new, session/load on one connection. Retries host-away.
+  session-prompt [--token T] [--text STR] [--host H] [--port P] [--timeout S]
+                    initialize, session/new, session/prompt on one connection. Needs launch-home.
 
 Environment:
   AQUALUNG_VERIFY_RUN     Run id (default: timestamp). Artifacts and state are keyed by this.
@@ -95,6 +103,8 @@ clear_state_vars() {
   SNORKEL_PORT_OWNED=""
   TOPSIDE_PID=""
   SNORKEL_PID=""
+  LEADER_PID=""
+  LEADER_SOCKET=""
 }
 
 read_state() {
@@ -112,6 +122,8 @@ read_state() {
       snorkel_port=*) SNORKEL_PORT_OWNED=${line#snorkel_port=} ;;
       topside_pid=*) TOPSIDE_PID=${line#topside_pid=} ;;
       snorkel_pid=*) SNORKEL_PID=${line#snorkel_pid=} ;;
+      leader_pid=*) LEADER_PID=${line#leader_pid=} ;;
+      leader_socket=*) LEADER_SOCKET=${line#leader_socket=} ;;
       *)
         if [[ "$line" =~ ^[0-9]+$ ]]; then
           if [[ -z "$first" ]]; then
@@ -148,6 +160,22 @@ container=$1
 phone_port=$2
 snorkel_port=$3
 EOF
+}
+
+write_home_state() {
+  cat >"$STATE_FILE" <<EOF
+kind=home
+topside_pid=$1
+snorkel_pid=$2
+leader_pid=$3
+leader_socket=$4
+phone_port=$TOPSIDE_PHONE_PORT
+snorkel_port=$SNORKEL_PORT
+EOF
+}
+
+owns_host_instance() {
+  [[ "${KIND:-}" == local || "${KIND:-}" == home ]] && [[ -f "$STATE_FILE" ]]
 }
 
 docker_running() {
@@ -313,6 +341,54 @@ wait_listen() {
   return 1
 }
 
+wait_unix_socket() {
+  local sock=$1
+  local i
+  for i in $(seq 1 100); do
+    if [[ -S "$sock" ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+spawn_topside() {
+  local bin=$1 token=$2
+  "$bin" \
+    --cert "$RUN_DIR/pki/server.pem" \
+    --key "$RUN_DIR/pki/server.key" \
+    --ca "$RUN_DIR/pki/ca.pem" \
+    --client-cert "$RUN_DIR/pki/client.pem" \
+    --token "$token" \
+    --snorkel 0.0.0.0:1943 \
+    --phone 0.0.0.0:7678 \
+    >"$ARTIFACT_DIR/topside.log" 2>&1 &
+  printf '%s\n' $!
+}
+
+spawn_snorkel() {
+  local bin=$1 socket=$2
+  "$bin" \
+    --socket "$socket" \
+    --server 127.0.0.1:1943 \
+    --cert "$RUN_DIR/pki/client.pem" \
+    --key "$RUN_DIR/pki/client.key" \
+    --ca "$RUN_DIR/pki/ca.pem" \
+    >"$ARTIFACT_DIR/snorkel.log" 2>&1 &
+  printf '%s\n' $!
+}
+
+kill_recorded() {
+  local pid
+  for pid in "$@"; do
+    [[ -z "$pid" ]] && continue
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+}
+
 require_driveable() {
   local json
   json=$(emit_doctor)
@@ -321,6 +397,18 @@ require_driveable() {
     return 1
   fi
   return 0
+}
+
+require_live_home() {
+  require_driveable "$1" || return 1
+  read_state || true
+  case "${KIND:-}" in
+    home|docker) return 0 ;;
+    *)
+      echo "$1 refused: this run has no live leader.sock. Use launch-home or launch-image. Local launch points snorkel at a missing unix path." >&2
+      return 1
+      ;;
+  esac
 }
 
 cmd_launch() {
@@ -363,25 +451,8 @@ cmd_launch() {
   printf '%s\n' "$token" >"$RUN_DIR/token"
   echo "TOPSIDE_TOKEN=$token" >&2
 
-  "$topside_bin" \
-    --cert "$RUN_DIR/pki/server.pem" \
-    --key "$RUN_DIR/pki/server.key" \
-    --ca "$RUN_DIR/pki/ca.pem" \
-    --client-cert "$RUN_DIR/pki/client.pem" \
-    --token "$token" \
-    --snorkel 0.0.0.0:1943 \
-    --phone 0.0.0.0:7678 \
-    >"$ARTIFACT_DIR/topside.log" 2>&1 &
-  topside_pid=$!
-
-  "$snorkel_bin" \
-    --socket "$RUN_DIR/missing.sock" \
-    --server 127.0.0.1:1943 \
-    --cert "$RUN_DIR/pki/client.pem" \
-    --key "$RUN_DIR/pki/client.key" \
-    --ca "$RUN_DIR/pki/ca.pem" \
-    >"$ARTIFACT_DIR/snorkel.log" 2>&1 &
-  snorkel_pid=$!
+  topside_pid=$(spawn_topside "$topside_bin" "$token")
+  snorkel_pid=$(spawn_snorkel "$snorkel_bin" "$RUN_DIR/missing.sock")
 
   write_local_state "$topside_pid" "$snorkel_pid"
 
@@ -390,11 +461,117 @@ cmd_launch() {
     if [[ -f "$ARTIFACT_DIR/topside.log" ]]; then
       cat "$ARTIFACT_DIR/topside.log" >&2
     fi
-    kill "$topside_pid" 2>/dev/null || true
-    kill "$snorkel_pid" 2>/dev/null || true
+    kill_recorded "$topside_pid" "$snorkel_pid"
     rm -f "$STATE_FILE"
     return 1
   fi
+
+  json=$(emit_doctor)
+  printf '%s\n' "$json"
+  doctor_exit "$json"
+}
+
+cmd_launch_home() {
+  local json stage socket="" owned_leader=0
+  if [[ "${1:-}" == "--socket" ]]; then
+    socket=${2:-}
+  elif [[ -n "${1:-}" ]]; then
+    socket=$1
+  fi
+  json=$(emit_doctor)
+  stage=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["stage"])' <<<"$json")
+  if [[ "$stage" == "design" ]]; then
+    printf '%s\n' "$json"
+    echo "launch-home refused: this checkout has no snorkel/topside binary." >&2
+    return 2
+  fi
+  if [[ "$stage" == "incomplete" ]]; then
+    printf '%s\n' "$json"
+    echo "launch-home refused: only one of snorkel/topside is present." >&2
+    return 1
+  fi
+  if [[ "$stage" == "foreign" ]]; then
+    printf '%s\n' "$json"
+    echo "launch-home refused: a process we did not start owns 1943 or 7678." >&2
+    return 1
+  fi
+  read_state || true
+  if [[ "$stage" == "ready" ]]; then
+    if [[ "${KIND:-}" == home ]]; then
+      printf '%s\n' "$json"
+      return 0
+    fi
+    echo "launch-home refused: this run already owns a ${KIND:-local} instance. cleanup first." >&2
+    return 1
+  fi
+  if [[ "${KIND:-}" == docker ]]; then
+    echo "launch-home refused: this run already owns a docker instance. cleanup first." >&2
+    return 1
+  fi
+
+  local snorkel_bin topside_bin token topside_pid snorkel_pid leader_pid="" grok_bin
+  snorkel_bin=$(find_binary snorkel) || return 1
+  topside_bin=$(find_binary topside) || return 1
+  mkdir_p "$RUN_DIR"
+  mkdir_p "$ARTIFACT_DIR"
+
+  if [[ -n "$socket" ]]; then
+    socket=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$socket")
+    if [[ ! -S "$socket" ]]; then
+      echo "launch-home refused: $socket is not a unix socket." >&2
+      return 1
+    fi
+    echo "LEADER_SOCKET=$socket (external; cleanup will not stop grok)" >&2
+  else
+    grok_bin=$(command -v grok || true)
+    if [[ -z "$grok_bin" ]]; then
+      echo "launch-home refused: grok is not on PATH. Pass an existing --socket or install grok." >&2
+      return 1
+    fi
+    socket="$RUN_DIR/leader.sock"
+    rm -f "$socket"
+    "$grok_bin" agent leader \
+      --no-exit-on-disconnect \
+      --relay-on-demand \
+      --no-auto-update \
+      --leader-socket "$socket" \
+      >"$ARTIFACT_DIR/leader.log" 2>&1 &
+    leader_pid=$!
+    owned_leader=1
+    echo "LEADER_PID=$leader_pid" >&2
+    echo "LEADER_SOCKET=$socket" >&2
+    if ! wait_unix_socket "$socket"; then
+      echo "launch-home failed: leader socket did not appear" >&2
+      tail -n 80 "$ARTIFACT_DIR/leader.log" >&2 || true
+      kill_recorded "$leader_pid"
+      return 1
+    fi
+    if ! kill -0 "$leader_pid" 2>/dev/null; then
+      echo "launch-home failed: grok agent leader exited" >&2
+      tail -n 80 "$ARTIFACT_DIR/leader.log" >&2 || true
+      return 1
+    fi
+  fi
+
+  generate_pki "$RUN_DIR/pki"
+  token=$(openssl rand -hex 16)
+  printf '%s\n' "$token" >"$RUN_DIR/token"
+  echo "TOPSIDE_TOKEN=$token" >&2
+
+  topside_pid=$(spawn_topside "$topside_bin" "$token")
+  if ! wait_listen "$SNORKEL_PORT" || ! wait_listen "$TOPSIDE_PHONE_PORT"; then
+    echo "launch-home failed: topside did not listen on 1943 and 7678" >&2
+    cat "$ARTIFACT_DIR/topside.log" >&2 || true
+    kill_recorded "$topside_pid"
+    if [[ "$owned_leader" -eq 1 ]]; then
+      kill_recorded "$leader_pid"
+      rm -f "$socket"
+    fi
+    return 1
+  fi
+
+  snorkel_pid=$(spawn_snorkel "$snorkel_bin" "$socket")
+  write_home_state "$topside_pid" "$snorkel_pid" "$leader_pid" "$socket"
 
   json=$(emit_doctor)
   printf '%s\n' "$json"
@@ -417,7 +594,7 @@ cmd_launch_image() {
     echo "note: 1943 or 7678 is busy on this machine. launch-image still binds random host ports." >&2
   fi
   read_state || true
-  if [[ "${KIND:-}" == local && -f "$STATE_FILE" ]]; then
+  if owns_host_instance; then
     echo "launch-image refused: this run owns a local instance. cleanup first." >&2
     return 1
   fi
@@ -512,13 +689,10 @@ cmd_cleanup() {
       docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
     fi
   else
-    local pid
-    for pid in "${TOPSIDE_PID:-}" "${SNORKEL_PID:-}"; do
-      [[ -z "$pid" ]] && continue
-      if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-      fi
-    done
+    kill_recorded "${SNORKEL_PID:-}" "${TOPSIDE_PID:-}" "${LEADER_PID:-}"
+    if [[ -n "${LEADER_PID:-}" && -n "${LEADER_SOCKET:-}" && "$LEADER_SOCKET" == "$RUN_DIR/"* ]]; then
+      rm -f "$LEADER_SOCKET"
+    fi
   fi
   rm -f "$STATE_FILE"
   rmdir "$RUN_DIR" 2>/dev/null || true
@@ -526,7 +700,7 @@ cmd_cleanup() {
 }
 
 cmd_phone() {
-  local token="" host="127.0.0.1" port="" timeout="10" probe=0 load_id=""
+  local token="" host="127.0.0.1" port="" timeout="10" probe=0 prompt=0 load_id="" prompt_text=""
   local -a sends=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -536,12 +710,14 @@ cmd_phone() {
       --port) port=$2; shift 2 ;;
       --timeout) timeout=$2; shift 2 ;;
       --load-id) load_id=$2; shift 2 ;;
+      --prompt-text) prompt_text=$2; shift 2 ;;
       --probe-session) probe=1; shift ;;
+      --probe-prompt) prompt=1; shift ;;
       *) echo "unknown phone flag: $1" >&2; return 1 ;;
     esac
   done
-  if [[ "$probe" -eq 0 && ${#sends[@]} -eq 0 ]]; then
-    echo "phone requires --send or --probe-session" >&2
+  if [[ "$probe" -eq 0 && "$prompt" -eq 0 && ${#sends[@]} -eq 0 ]]; then
+    echo "phone requires --send, --probe-session, or --probe-prompt" >&2
     return 1
   fi
   if [[ -z "$token" ]]; then
@@ -564,6 +740,12 @@ cmd_phone() {
   if [[ "$probe" -eq 1 ]]; then
     args+=(--probe-session)
   fi
+  if [[ "$prompt" -eq 1 ]]; then
+    args+=(--probe-prompt)
+    if [[ -n "$prompt_text" ]]; then
+      args+=(--prompt-text "$prompt_text")
+    fi
+  fi
   "${args[@]}"
 }
 
@@ -578,7 +760,7 @@ cmd_session_load() {
       *) echo "unknown session-load flag: $1" >&2; return 1 ;;
     esac
   done
-  require_driveable session-load || return 1
+  require_live_home session-load || return 1
   read_state || true
   if [[ -z "$token" ]]; then
     token=$(run_token)
@@ -624,15 +806,90 @@ cmd_session_load() {
   return 1
 }
 
+cmd_session_prompt() {
+  local token="" host="127.0.0.1" port="" timeout="240" text=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --token) token=$2; shift 2 ;;
+      --host) host=$2; shift 2 ;;
+      --port) port=$2; shift 2 ;;
+      --timeout) timeout=$2; shift 2 ;;
+      --text) text=$2; shift 2 ;;
+      *) echo "unknown session-prompt flag: $1" >&2; return 1 ;;
+    esac
+  done
+  require_driveable session-prompt || return 1
+  read_state || true
+  if [[ "${KIND:-}" != home ]]; then
+    echo "session-prompt refused: needs launch-home (host grok auth). launch-image dummy cannot prompt. Local launch has no socket." >&2
+    return 1
+  fi
+  if [[ -z "$token" ]]; then
+    token=$(run_token)
+  fi
+  if [[ -z "$token" ]]; then
+    echo "session-prompt requires --token or a token file from launch-home" >&2
+    return 1
+  fi
+  if [[ -z "$port" ]]; then
+    port=$(owned_phone_port)
+  fi
+
+  mkdir_p "$ARTIFACT_DIR/session-prompt"
+  local deadline probe_code=1 probe_out="" started
+  local -a phone_args
+  started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  phone_args=(python3 "$PHONE_PY" --host "$host" --port "$port" --token "$token" --timeout "$timeout" --probe-prompt)
+  if [[ -n "$text" ]]; then
+    phone_args+=(--prompt-text "$text")
+  fi
+  deadline=$((SECONDS + 120))
+  while (( SECONDS < deadline )); do
+    probe_code=0
+    probe_out=$("${phone_args[@]}" 2>"$ARTIFACT_DIR/session-prompt/probe.err") || probe_code=$?
+    if [[ "$probe_code" -eq 0 || "$probe_code" -eq 3 ]]; then
+      break
+    fi
+    if [[ "$probe_code" -ne 4 ]]; then
+      break
+    fi
+    sleep 0.4
+  done
+
+  printf '%s\n' "$probe_out" >"$ARTIFACT_DIR/session-prompt/probe.ndjson"
+  {
+    printf 'started %s\n' "$started"
+    printf 'host %s port %s timeout %s\n' "$host" "$port" "$timeout"
+    printf 'exit %s\n' "$probe_code"
+    printf 'feature session-prompt entry 7678\n'
+  } >"$ARTIFACT_DIR/session-prompt/probe.cmd.txt"
+  printf '%s\n' "$probe_out"
+  if [[ -s "$ARTIFACT_DIR/session-prompt/probe.err" ]]; then
+    cat "$ARTIFACT_DIR/session-prompt/probe.err" >&2
+  fi
+
+  if [[ "$probe_code" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "$probe_code" -eq 3 ]]; then
+    echo "session/new reached grok without a sessionId; session/prompt not sent" >&2
+    return 3
+  fi
+  echo "session-prompt failed: host stayed away, grok returned an error, or there was no stopReason" >&2
+  return 1
+}
+
 cmd=${1:-}
 shift || true
 case "$cmd" in
   doctor) cmd_doctor "$@" ;;
   launch) cmd_launch "$@" ;;
+  launch-home) cmd_launch_home "$@" ;;
   launch-image) cmd_launch_image "$@" ;;
   cleanup) cmd_cleanup "$@" ;;
   phone) cmd_phone "$@" ;;
   session-load) cmd_session_load "$@" ;;
+  session-prompt) cmd_session_prompt "$@" ;;
   -h|--help|help|"") usage; exit 0 ;;
   *) echo "unknown command: $cmd" >&2; usage; exit 1 ;;
 esac
