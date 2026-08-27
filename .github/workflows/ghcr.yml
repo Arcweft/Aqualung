@@ -6,7 +6,6 @@
 # Builds only when docker/Rust sources change on main, on v* tags, or
 # when someone runs the workflow by hand. Other CI / docs commits skip it.
 
-
 name: ghcr
 
 on:
