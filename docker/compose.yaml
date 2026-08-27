@@ -11,6 +11,8 @@
 # Prebuilt images on GitHub Container Registry:
 #   ghcr.io/arcweft/aqualung:stable   (grok 1.0.5)
 #   ghcr.io/arcweft/aqualung:alpha    (grok 1.0.11)
+# Package page (set visibility Public once):
+#   https://github.com/orgs/Arcweft/packages/container/package/aqualung
 
 name: aqualung
 
