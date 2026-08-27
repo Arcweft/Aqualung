@@ -1,0 +1,38 @@
+# Two isolated stacks. topside serves one snorkel; two grok versions
+# cannot share a topside. Host ports: stable 7678/1943, alpha 17678/11943.
+#
+# Pin GROK_VERSION. Channel files move:
+#   https://x.ai/cli/stable -> 1.0.5
+#   https://x.ai/cli/alpha  -> 1.0.11
+#
+# From repo root:
+#   docker compose -f docker/compose.yaml up --build
+
+services:
+  stable:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        GROK_VERSION: "1.0.5"
+    init: true
+    ports:
+      - "7678:7678"
+      - "1943:1943"
+    environment:
+      GROK_HOME: /var/lib/grok
+      GROK_LEADER_SOCKET: /var/lib/grok/leader.sock
+
+  alpha:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        GROK_VERSION: "1.0.11"
+    init: true
+    ports:
+      - "17678:7678"
+      - "11943:1943"
+    environment:
+      GROK_HOME: /var/lib/grok
+      GROK_LEADER_SOCKET: /var/lib/grok/leader.sock

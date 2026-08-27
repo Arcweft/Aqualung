@@ -1,0 +1,10 @@
+.git
+.cursor
+target
+**/*.pem
+**/*.key
+docker/run
+*.md
+LICENSE
+scripts
+docs
